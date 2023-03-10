@@ -9,7 +9,7 @@ class simulator:
         self.cpus = [ CPU(i) for i in range(num_cpus) ]
         
     
-    def run_simulation(self, num_users, think_time, avg_service_time, context_switch_time, avg_interarrival_time, timeout, repeat, ctxSwOverhead,  rseed = 1, rstream = 0) -> None:
+    def run_simulation(self, num_users, think_time, avg_service_time, context_switch_time, avg_interarrival_time, timeout, repeat, ctxSwOverhead, maxQueueSize, retryProb, retryTime, rseed = 1, rstream = 0) -> None:
         
         task_queue = []
         schedulers = SchedulerList()
@@ -20,7 +20,7 @@ class simulator:
         
         for i in range(num_users):
             # initilise users
-            t_user = User(i, think_time, avg_interarrival_time, avg_service_time, timeout)
+            t_user = User(i, think_time, avg_interarrival_time, avg_service_time, timeout, retryProb, retryTime)
             GlobalVars.usersList.add_user(t_user)
         
         # create scheduler for each cpu
@@ -44,9 +44,14 @@ class simulator:
                 freeSched = schedulers.getAScheduler()
                 t_task = nextUser.sendRequest()
                 if freeSched == None:
-                    # there is no free cpu
-                    # add to task queue
-                    task_queue.insert(0, t_task)
+                    # check if queue is full
+                    if len(task_queue) == maxQueueSize:
+                        # then add drop the request
+                        nextUser.droppedRequest()
+                    else:
+                        # add task to the queue
+                        task_queue.insert(0, t_task)
+
                     # TODO: to record the queue length?
                 else:
                     freeSched.addTaskAndCreateThread(t_task)

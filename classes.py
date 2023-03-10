@@ -11,8 +11,6 @@ def expon(mean: int) -> int:
     return round((-mean) * log(lcgrand()))
 
 
-
-
 class ThreadState(Enum):
     CREATED = 1
     READY = 2
@@ -30,6 +28,7 @@ class UserState(Enum):
 class TaskCompletionState(Enum):
     SUCCESS = 0
     TIMEOUT = 1
+    DROPPED = 2
 
 # The task class represents an individual task
 @dataclass
@@ -49,6 +48,7 @@ class Task:
     numContextSwitches: int = field(default=0, init=False)
     totalContextSwitchOverhead: int = field(default=0, init=False)
     completionState: TaskCompletionState = field(init=False)
+    numRetries: int = field(init=False, default=0)
 
 
 # The thread class represent a thread. 
@@ -96,6 +96,8 @@ class User:
     avgInterarrivalTime: int
     avgServiceTime: int
     timeoutDuration: int
+    retryProb: float
+    retryTime: int
     task: Task = field(init=False)
     completedTasks: list[Task] = field(init=False, default_factory=list)
     userState: UserState = field(default=UserState.READY, init=False)
@@ -117,6 +119,27 @@ class User:
         self.userState = UserState.WAITING
         # return the task
         return self.task
+
+    def droppedRequest(self) -> None: 
+        '''Method to handle request drops'''
+        # with probability p retry the request 
+        if lcgrand() <= self.retryProb:
+            # retry
+            self.task.arrivalTime += expon(self.retryTime)
+            self.task.numRetries += 1
+            # change the state of the user
+            self.userState = UserState.READY
+        else:
+            # mark the request as dropped
+            self.task.completionState = TaskCompletionState.DROPPED
+            self.task.departureTime = self.task.arrivalTime
+            self.completedTasks.append(self.task)
+
+            # generate a new request
+            self.createTask(self.completedTasks[-1].departureTime + self.thinkTime)
+            # change userstate
+            self.userState = UserState.READY
+
 
     def requestCompleted(self):
         # add current task to completed tasks list
