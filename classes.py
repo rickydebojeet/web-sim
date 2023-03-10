@@ -110,7 +110,13 @@ class User:
         '''Creates a new task for the given arrival time'''
         # get service timeout from distribution
         dist_service_time = expon(self.avgServiceTime)
-        self.task = Task(GlobalVars.TASKIDCOUNTER, self.userId, arrivalTime, dist_service_time, self.timeoutDuration, dist_service_time)
+
+        # 50% of the timeout is minimum and rest is exponential
+        min_timeout = self.timeoutDuration // 2
+        var_timeout = expon(self.timeoutDuration - min_timeout)
+        total_timeout = min_timeout + var_timeout
+
+        self.task = Task(GlobalVars.TASKIDCOUNTER, self.userId, arrivalTime, dist_service_time, total_timeout, dist_service_time)
         GlobalVars.TASKIDCOUNTER += 1
 
     def sendRequest(self) -> Task:
