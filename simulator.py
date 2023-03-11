@@ -7,7 +7,8 @@ class simulator:
         self.num_cpus = num_cpus
         self.max_threads = max_threads
         self.cpus = [ CPU(i) for i in range(num_cpus) ]
-        
+        self.counters = Counters()
+        self.usersList = UserList()
     
     def run_simulation(self, num_users, think_time, avg_service_time, context_switch_time, avg_interarrival_time, timeout, repeat, ctxSwOverhead, maxQueueSize, retryProb, retryTime, rseed = 1, rstream = 0) -> None:
         
@@ -20,18 +21,18 @@ class simulator:
         
         for i in range(num_users):
             # initilise users
-            t_user = User(i, think_time, avg_interarrival_time, avg_service_time, timeout, retryProb, retryTime)
-            GlobalVars.usersList.add_user(t_user)
+            t_user = User(i, think_time, avg_interarrival_time, avg_service_time, timeout, retryProb, retryTime, self.counters)
+            self.usersList.add_user(t_user)
         
         # create scheduler for each cpu
 
         for cpu in self.cpus:
-            schedulers.add(RoundRobinScheduler(context_switch_time, ctxSwOverhead, cpu ))
+            schedulers.add(RoundRobinScheduler(context_switch_time, ctxSwOverhead, cpu, self.max_threads, self.usersList, self.counters ))
             
 
         for _ in range(repeat):
             # get next user event
-            nextUser = GlobalVars.usersList.get_next_sender()
+            nextUser = self.usersList.get_next_sender()
             # get next scheduler event
             nextSched = schedulers.nextEvent()
 
@@ -72,6 +73,9 @@ class simulator:
                         
                     # add task to scheduler
                     freeSched.addTaskAndCreateThread(task_queue.pop())
+
+    def getAvgServiceTime(self) -> float:
+        '''Returns the average service time after simulation'''
         
         
 

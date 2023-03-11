@@ -30,6 +30,14 @@ class TaskCompletionState(Enum):
     TIMEOUT = 1
     DROPPED = 2
 
+
+class Counters:
+    # Counter for thread ID
+    TASKIDCOUNTER: int = field(default=0, init=False)
+    THREADIDCOUNTER: int = field(default=0, init=False)
+
+    
+
 # The task class represents an individual task
 @dataclass
 class Task:
@@ -49,32 +57,6 @@ class Task:
     totalContextSwitchOverhead: int = field(default=0, init=False)
     completionState: TaskCompletionState = field(init=False)
     numRetries: int = field(init=False, default=0)
-
-
-# The thread class represent a thread. 
-# Each thread is assigned a task
-@dataclass
-class Thread:
-    threadId: int
-    cpuId: int
-    task: Task
-    threadState: ThreadState = field(default=ThreadState.CREATED, init=False)
-
-    def threadCompleted(self, currentCpuTime: int):
-        '''Thread has completed execution'''
-        # Mark thread state as done
-        self.threadState = ThreadState.DONE
-        # update task departure time
-        self.task.departureTime = currentCpuTime
-        # update total waiting time
-        self.task.waitingTime = self.task.departureTime - self.task.arrivalTime - self.task.burstTime
-        # turn around time
-        tat = self.task.departureTime - self.task.arrivalTime
-
-        self.task.completionState = TaskCompletionState.SUCCESS if self.task.timeoutDuration <= tat else TaskCompletionState.TIMEOUT
-
-        # update the user
-        GlobalVars.usersList.get_user(self.task.userId).requestCompleted()
 
 
 # The CPU class represents a core
@@ -98,6 +80,7 @@ class User:
     timeoutDuration: int
     retryProb: float
     retryTime: int
+    counters: Counters
     task: Task = field(init=False)
     completedTasks: list[Task] = field(init=False, default_factory=list)
     userState: UserState = field(default=UserState.READY, init=False)
@@ -116,8 +99,8 @@ class User:
         var_timeout = expon(self.timeoutDuration - min_timeout)
         total_timeout = min_timeout + var_timeout
 
-        self.task = Task(GlobalVars.TASKIDCOUNTER, self.userId, arrivalTime, dist_service_time, total_timeout, dist_service_time)
-        GlobalVars.TASKIDCOUNTER += 1
+        self.task = Task(self.counters.TASKIDCOUNTER, self.userId, arrivalTime, dist_service_time, total_timeout, dist_service_time)
+        self.counters.TASKIDCOUNTER += 1
 
     def sendRequest(self) -> Task:
         '''Sends the task to server'''
@@ -184,6 +167,31 @@ class UserList:
         return next_user
 
 
+# The thread class represent a thread. 
+# Each thread is assigned a task
+@dataclass
+class Thread:
+    threadId: int
+    cpuId: int
+    task: Task
+    threadState: ThreadState = field(default=ThreadState.CREATED, init=False)
+
+    def threadCompleted(self, currentCpuTime: int, usersList: UserList):
+        '''Thread has completed execution'''
+        # Mark thread state as done
+        self.threadState = ThreadState.DONE
+        # update task departure time
+        self.task.departureTime = currentCpuTime
+        # update total waiting time
+        self.task.waitingTime = self.task.departureTime - self.task.arrivalTime - self.task.burstTime
+        # turn around time
+        tat = self.task.departureTime - self.task.arrivalTime
+
+        self.task.completionState = TaskCompletionState.SUCCESS if self.task.timeoutDuration <= tat else TaskCompletionState.TIMEOUT
+
+        # update the user
+        usersList.get_user(self.task.userId).requestCompleted()
+
 
 @dataclass
 class RoundRobinScheduler:
@@ -191,8 +199,10 @@ class RoundRobinScheduler:
     contextSwitchOverhead: int
     cpu: CPU
     maxThreadQueueSize: int
+    usersList: UserList
+    counters: Counters
     execThreadQueue: list[Thread] = field(default_factory=list, init=False)
-    executingThreadIdx: int = field(default=-1)
+    executingThreadIdx: int = field(default=-1, init=False)
     currentTimeQuanta: int = field(default=0, init=False)
 
     def isThreadQueueFull(self)->bool:
@@ -223,10 +233,10 @@ class RoundRobinScheduler:
     def addTaskAndCreateThread(self, t_task: Task) -> None:
         '''Adds a task and creates thread'''
         # create a thread and assign it to the cpu
-        thread = Thread(GlobalVars.THREADIDCOUNTER, self.cpu.cpuId, t_task)
+        thread = Thread(self.counters.THREADIDCOUNTER, self.cpu.cpuId, t_task)
 
         # Increment thread id counter
-        GlobalVars.THREADIDCOUNTER += 1
+        self.counters.THREADIDCOUNTER += 1
         # add it to the scheduler 
         self.addThread(thread)
     
@@ -260,7 +270,7 @@ class RoundRobinScheduler:
             # check if task completed
             if self.execThreadQueue[self.executingThreadIdx].task.remainingTime <= 0:
                 # call compeletion handler
-                self.execThreadQueue[self.executingThreadIdx].threadCompleted(self.cpu.currentCpuTime)
+                self.execThreadQueue[self.executingThreadIdx].threadCompleted(self.cpu.currentCpuTime, self.usersList)
 
             # remove thread from queue
             del self.execThreadQueue[self.executingThreadIdx]
@@ -354,9 +364,3 @@ class SchedulerList:
 
 
 
-class GlobalVars:
-    # Counter for thread ID
-    TASKIDCOUNTER = 0
-    THREADIDCOUNTER = 0
-
-    usersList = UserList()
