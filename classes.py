@@ -166,6 +166,10 @@ class UserList:
         next_user = min(readyUsers, key=lambda x: x.task.arrivalTime)
         return next_user
 
+    def get_all_users(self) -> list[User]:
+        '''Return list of all users'''
+        return self.users.values()
+
 
 # The thread class represent a thread. 
 # Each thread is assigned a task
