@@ -57,6 +57,7 @@ class simulator:
                         # then add drop the request
                         nextUser.droppedRequest()
                     else:
+                        print(f"|{'ENQUEUE':15s}|{nextUser.task.arrivalTime:<10d}|{f'USERID {nextUser.userId}':10s}|{f'TASKID {nextUser.task.taskId}':10s}|{f'QLEN {len(task_queue)}':10s}")
                         # add task to the queue
                         task_queue.insert(0, t_task)
 
@@ -82,7 +83,9 @@ class simulator:
                     # not free cpu
                     if freeSched == None:
                         break
-                        
+                    
+                    print(f"|{'DEQUEUE':15s}|{freeSched.cpu.currentCpuTime:<10d}|{f'CPUID {freeSched.cpu.cpuId}':10s}|{f'TASKID {task_queue[-1].taskId}':10s}|{f'QLEN {len(task_queue)-1}':10s}")
+
                     # add task to scheduler
                     freeSched.addTaskAndCreateThread(task_queue.pop())
 

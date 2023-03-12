@@ -106,6 +106,8 @@ class User:
         '''Sends the task to server'''
         # set the user state to waiting
         self.userState = UserState.WAITING
+        # print trace
+        print(f"|{'ARRIVAL':15s}|{self.task.arrivalTime:<10d}|{f'USERID {self.userId}':10s}|{f'TASKID {self.task.taskId}':10s}|{f'BURST {self.task.burstTime}':10s}|")
         # return the task
         return self.task
 
@@ -113,12 +115,14 @@ class User:
         '''Method to handle request drops'''
         # with probability p retry the request 
         if lcgrand() <= self.retryProb:
+            print(f"|{'RETRY':15s}|{self.task.arrivalTime:<10d}|{f'USERID {self.userId}':10s}|{f'TASKID {self.task.taskId}':10s}|{f'RETRYN {self.task.numRetries}':10s}|")
             # retry
             self.task.arrivalTime += expon(self.retryTime)
             self.task.numRetries += 1
             # change the state of the user
             self.userState = UserState.READY
         else:
+            print(f"|{'DROPPED':15s}|{self.task.arrivalTime:<10d}|{f'USERID {self.userId}':10s}|{f'TASKID {self.task.taskId}':10s}|{f'RETRYN {self.task.numRetries}':10s}|")
             # mark the request as dropped
             self.task.completionState = TaskCompletionState.DROPPED
             self.task.departureTime = self.task.arrivalTime
@@ -131,6 +135,9 @@ class User:
 
 
     def requestCompleted(self):
+        
+        print(f"|{self.task.completionState.name:15s}|{self.task.departureTime:<10d}|{f'USERID {self.userId}':10s}|{f'TASKID {self.task.taskId}':10s}|")
+
         # add current task to completed tasks list
         self.completedTasks.append(self.task)
         
@@ -238,6 +245,10 @@ class RoundRobinScheduler:
         '''Adds a task and creates thread'''
         # create a thread and assign it to the cpu
         thread = Thread(self.counters.THREADIDCOUNTER, self.cpu.cpuId, t_task)
+        t_task.threadId = thread.threadId
+        t_task.cpuId = self.cpu.cpuId
+
+        print(f"|{'THREADCREATE':15s}|{self.cpu.currentCpuTime:<10d}|{f'CPUID {self.cpu.cpuId}':10s}|{f'TID {thread.threadId}':10s}|{f'TASKID {t_task.taskId}':10s}")
 
         # Increment thread id counter
         self.counters.THREADIDCOUNTER += 1
@@ -257,7 +268,7 @@ class RoundRobinScheduler:
             # update cpu stats
             self.cpu.currentCpuTime += self.currentTimeQuanta
             self.cpu.totalExecutionTime += self.currentTimeQuanta
-
+            print(f"|{'EXECUTE':15s}|{self.cpu.currentCpuTime:<10d}|{f'CPUID {self.cpu.cpuId}':10s}|{f'TID {self.execThreadQueue[self.executingThreadIdx].threadId}':10s}|{f'FOR {self.currentTimeQuanta}':10s}|")
             # update task remaining time
             self.execThreadQueue[self.executingThreadIdx].task.remainingTime -= self.currentTimeQuanta
 
@@ -302,6 +313,9 @@ class RoundRobinScheduler:
 
             # increment index
             nextIdx = (self.executingThreadIdx + 1) % len(self.execThreadQueue)
+
+        
+        print(f"|{'CTXSWITCH':15s}|{self.cpu.currentCpuTime:<10d}|{f'CPUID {self.cpu.cpuId}':10s}|{f'TID {self.execThreadQueue[self.executingThreadIdx].threadId}':10s}|{f'TASKID {self.execThreadQueue[self.executingThreadIdx].task.taskId}':10s}|")
 
         # if thread queue is empty then return -1
         if len(self.execThreadQueue) == 0:
