@@ -133,7 +133,7 @@ class simulator:
         droppedRequests = 0
         for user in self.usersList.get_all_users():
             for com_task in user.completedTasks:
-                if com_task.completionState != TaskCompletionState.DROPPED:
+                if com_task.completionState == TaskCompletionState.DROPPED:
                     droppedRequests += 1
         
         # divide by simulation time
@@ -146,12 +146,13 @@ class simulator:
 
 
 def main():
+    CLOCKS_PER_SEC = 1000000
     sim = simulator(1, 200)
     sim.run_simulation(15, 10000000, 80000, 20000, 100000, 2000000, 300000000, 1000, 10, 0.5, 500000)
-    print(f'Response time: {sim.getAvgResponseTime()}')
-    print(f'Goodput: {sim.getGoodPut()}')
-    print(f'Badput: {sim.getBadPut()}')
-    print(f'Request Drop Rate: {sim.getRequestDropRate()}')
+    print(f'Response time: {sim.getAvgResponseTime() / CLOCKS_PER_SEC} s')
+    print(f'Goodput: {sim.getGoodPut() * CLOCKS_PER_SEC} req/s')
+    print(f'Badput: {sim.getBadPut() * CLOCKS_PER_SEC} req/s')
+    print(f'Request Drop Rate: {sim.getRequestDropRate() * CLOCKS_PER_SEC} req/s')
     print(f'Utilisation: {sim.getCoreUtilisation()}')
 
 
