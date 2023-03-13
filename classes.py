@@ -30,12 +30,23 @@ class TaskCompletionState(Enum):
     TIMEOUT = 1
     DROPPED = 2
 
-
+@dataclass
 class Counters:
     # Counter for thread ID
     TASKIDCOUNTER: int = field(default=0, init=False)
     THREADIDCOUNTER: int = field(default=0, init=False)
 
+    def getTaskIdCounter(self) -> int:
+        '''Returns and increments task id counter'''
+        tid = self.TASKIDCOUNTER
+        self.TASKIDCOUNTER += 1
+        return tid
+
+    def getThreadIdCounter(self) -> int:
+        '''Returns and increments thread id counter'''
+        tid = self.THREADIDCOUNTER
+        self.THREADIDCOUNTER += 1
+        return tid
     
 
 # The task class represents an individual task
@@ -99,8 +110,8 @@ class User:
         var_timeout = expon(self.timeoutDuration - min_timeout)
         total_timeout = min_timeout + var_timeout
 
-        self.task = Task(self.counters.TASKIDCOUNTER, self.userId, arrivalTime, dist_service_time, total_timeout, dist_service_time)
-        self.counters.TASKIDCOUNTER += 1
+        self.task = Task(self.counters.getTaskIdCounter(), self.userId, arrivalTime, dist_service_time, total_timeout, dist_service_time)
+
 
     def sendRequest(self) -> Task:
         '''Sends the task to server'''
@@ -244,14 +255,12 @@ class RoundRobinScheduler:
     def addTaskAndCreateThread(self, t_task: Task) -> None:
         '''Adds a task and creates thread'''
         # create a thread and assign it to the cpu
-        thread = Thread(self.counters.THREADIDCOUNTER, self.cpu.cpuId, t_task)
+        thread = Thread(self.counters.getThreadIdCounter(), self.cpu.cpuId, t_task)
         t_task.threadId = thread.threadId
         t_task.cpuId = self.cpu.cpuId
 
         print(f"|{'THREADCREATE':15s}|{self.cpu.currentCpuTime:<10d}|{f'CPUID {self.cpu.cpuId}':10s}|{f'TID {thread.threadId}':10s}|{f'TASKID {t_task.taskId}':10s}")
 
-        # Increment thread id counter
-        self.counters.THREADIDCOUNTER += 1
         # add it to the scheduler 
         self.addThread(thread)
     
@@ -278,6 +287,9 @@ class RoundRobinScheduler:
         '''Gets the next task to schedule
             Returns the current CPU time'''
         nextIdx = -1
+
+        print(f"|{'CTXSWITCH':15s}|{self.cpu.currentCpuTime:<10d}|{f'CPUID {self.cpu.cpuId}':10s}|{f'TID {self.execThreadQueue[self.executingThreadIdx].threadId}':10s}|{f'TASKID {self.execThreadQueue[self.executingThreadIdx].task.taskId}':10s}|")
+
         # if the current thread has completed its execution
         # then mark it as completed and remove from queue
         if self.execThreadQueue[self.executingThreadIdx].task.remainingTime <= 0:
@@ -292,7 +304,7 @@ class RoundRobinScheduler:
 
             # since item is deleted, the current index points 
             # to the next Thread
-            nextIdx = self.executingThreadIdx % len(self.execThreadQueue)
+            nextIdx = self.executingThreadIdx % len(self.execThreadQueue) if len(self.execThreadQueue) != 0 else -1
 
         elif len(self.execThreadQueue) == 1:
             # if there is only one task
@@ -314,8 +326,6 @@ class RoundRobinScheduler:
             # increment index
             nextIdx = (self.executingThreadIdx + 1) % len(self.execThreadQueue)
 
-        
-        print(f"|{'CTXSWITCH':15s}|{self.cpu.currentCpuTime:<10d}|{f'CPUID {self.cpu.cpuId}':10s}|{f'TID {self.execThreadQueue[self.executingThreadIdx].threadId}':10s}|{f'TASKID {self.execThreadQueue[self.executingThreadIdx].task.taskId}':10s}|")
 
         # if thread queue is empty then return -1
         if len(self.execThreadQueue) == 0:
@@ -366,6 +376,8 @@ class SchedulerList:
         
         if targetSched.isThreadQueueFull():
             return None
+        
+        return targetSched
     
     def nextEvent(self)->RoundRobinScheduler:
         '''Returns the time of next event and associated scheduler

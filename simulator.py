@@ -38,7 +38,7 @@ class simulator:
             nextSched = schedulers.nextEvent()
 
             ## if both are none then assert error
-            assert nextUser != None and nextSched != None
+            assert nextUser != None or nextSched != None
 
 
             if nextUser != None and (nextSched == None or nextUser.task.arrivalTime < nextSched.getNextContextSwitchTime()):
@@ -142,3 +142,18 @@ class simulator:
     def getCoreUtilisation(self) -> float:
         '''Returns utilisation of all cores'''
         return sum([ cpu.totalExecutionTime / cpu.currentCpuTime for cpu in self.cpus ]) / self.num_cpus
+
+
+
+def main():
+    sim = simulator(1, 200)
+    sim.run_simulation(15, 10000000, 80000, 20000, 100000, 2000000, 300000000, 1000, 10, 0.5, 500000)
+    print(f'Response time: {sim.getAvgResponseTime()}')
+    print(f'Goodput: {sim.getGoodPut()}')
+    print(f'Badput: {sim.getBadPut()}')
+    print(f'Request Drop Rate: {sim.getRequestDropRate()}')
+    print(f'Utilisation: {sim.getCoreUtilisation()}')
+
+
+if __name__ == '__main__':
+    main()
