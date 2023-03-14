@@ -1,15 +1,15 @@
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, IntEnum
 from math import log
 from lcgrand import *
 from typing import ClassVar
+import heapq
 
 def exponf(mean: float) -> float:
     return (-mean) * log(lcgrand())
 
 def expon(mean: int) -> int:
     return round((-mean) * log(lcgrand()))
-
 
 class ThreadState(Enum):
     CREATED = 1
@@ -29,6 +29,14 @@ class TaskCompletionState(Enum):
     SUCCESS = 0
     TIMEOUT = 1
     DROPPED = 2
+
+class EventType(IntEnum):
+    DEQUEUE = 0
+    ARRIVAL= 1
+    EXECUTION = 2
+    CTXSWITCH = 3
+
+
 
 @dataclass
 class Counters:
@@ -176,13 +184,17 @@ class UserList:
     def get_next_sender(self) -> User:
         '''Get the next user who is ready to send the request
         return None if all users are waiting'''
-        readyUsers = list(filter(lambda x: x.userState == UserState.READY, self.users.values()))
+        readyUsers = self.get_all_ready_users()
 
         if len(readyUsers) == 0:
             return None
 
         next_user = min(readyUsers, key=lambda x: x.task.arrivalTime)
         return next_user
+
+    def get_all_ready_users(self) -> list[User]:
+        '''Returns the list of all ready users'''
+        return [ x for x in self.users.values() if x.userState == UserState.READY]
 
     def get_all_users(self) -> list[User]:
         '''Return list of all users'''
@@ -198,8 +210,9 @@ class Thread:
     task: Task
     threadState: ThreadState = field(default=ThreadState.CREATED, init=False)
 
-    def threadCompleted(self, currentCpuTime: int, usersList: UserList):
-        '''Thread has completed execution'''
+    def threadCompleted(self, currentCpuTime: int, usersList: UserList) -> int:
+        '''Thread has completed execution
+           Returns the associated user id'''
         # Mark thread state as done
         self.threadState = ThreadState.DONE
         # update task departure time
@@ -209,10 +222,11 @@ class Thread:
         # turn around time
         tat = self.task.departureTime - self.task.arrivalTime
 
-        self.task.completionState = TaskCompletionState.SUCCESS if self.task.timeoutDuration <= tat else TaskCompletionState.TIMEOUT
+        self.task.completionState = TaskCompletionState.SUCCESS if self.task.timeoutDuration >= tat else TaskCompletionState.TIMEOUT
 
         # update the user
         usersList.get_user(self.task.userId).requestCompleted()
+        return self.task.userId
 
 
 @dataclass
@@ -231,16 +245,20 @@ class RoundRobinScheduler:
         '''Returns true if thread queue is full'''
         return len(self.execThreadQueue) == self.maxThreadQueueSize
 
-    def addThread(self, thread: Thread) -> None:
-        '''Adds a new thread to the thread queue'''
+    def addThread(self, thread: Thread) -> bool:
+        '''Adds a new thread to the thread queue
+        returns true if cpu was idle before'''
         assert len(self.execThreadQueue) < self.maxThreadQueueSize
 
         # add thread in the last
         self.execThreadQueue.append(thread)
 
+        cpuIdle = False
+
         # if this is the first thread
         if len(self.execThreadQueue) == 1:
             assert self.cpu.cpuState == CPUState.IDLE
+            cpuIdle = True
             # update current time quanta
             self.currentTimeQuanta = min(thread.task.remainingTime, self.maxTimeQuanta)
             self.executingThreadIdx = 0
@@ -251,18 +269,22 @@ class RoundRobinScheduler:
         
         # update waiting in thread time
         thread.task.waitingTimeForThread = self.cpu.currentCpuTime - thread.task.arrivalTime
+        return cpuIdle
 
-    def addTaskAndCreateThread(self, t_task: Task) -> None:
-        '''Adds a task and creates thread'''
+    def addTaskAndCreateThread(self, t_task: Task) -> bool:
+        '''Adds a task and creates thread
+        returns true if cpu was idle before'''
         # create a thread and assign it to the cpu
         thread = Thread(self.counters.getThreadIdCounter(), self.cpu.cpuId, t_task)
         t_task.threadId = thread.threadId
         t_task.cpuId = self.cpu.cpuId
 
+        # add it to the scheduler 
+        cpuIdle = self.addThread(thread)
+
         print(f"|{'THREADCREATE':15s}|{self.cpu.currentCpuTime:<10d}|{f'CPUID {self.cpu.cpuId}':10s}|{f'TID {thread.threadId}':10s}|{f'TASKID {t_task.taskId}':10s}")
 
-        # add it to the scheduler 
-        self.addThread(thread)
+        return cpuIdle
     
 
     def getNextContextSwitchTime(self) -> int:
@@ -275,19 +297,18 @@ class RoundRobinScheduler:
         '''Executes the current thread'''
         if self.executingThreadIdx != -1:
             # update cpu stats
+            print(f"|{'EXECUTE':15s}|{self.cpu.currentCpuTime:<10d}|{f'CPUID {self.cpu.cpuId}':10s}|{f'TID {self.execThreadQueue[self.executingThreadIdx].threadId}':10s}|{f'FOR {self.currentTimeQuanta}':10s}|")
             self.cpu.currentCpuTime += self.currentTimeQuanta
             self.cpu.totalExecutionTime += self.currentTimeQuanta
-            print(f"|{'EXECUTE':15s}|{self.cpu.currentCpuTime:<10d}|{f'CPUID {self.cpu.cpuId}':10s}|{f'TID {self.execThreadQueue[self.executingThreadIdx].threadId}':10s}|{f'FOR {self.currentTimeQuanta}':10s}|")
             # update task remaining time
             self.execThreadQueue[self.executingThreadIdx].task.remainingTime -= self.currentTimeQuanta
 
-
-
-    def contextSwitch(self) -> int:
+        
+    def contextSwitch(self) -> User:
         '''Gets the next task to schedule
-            Returns the current CPU time'''
+            Returns user if its task is completed'''
         nextIdx = -1
-
+        completedUser = None
         print(f"|{'CTXSWITCH':15s}|{self.cpu.currentCpuTime:<10d}|{f'CPUID {self.cpu.cpuId}':10s}|{f'TID {self.execThreadQueue[self.executingThreadIdx].threadId}':10s}|{f'TASKID {self.execThreadQueue[self.executingThreadIdx].task.taskId}':10s}|")
 
         # if the current thread has completed its execution
@@ -297,7 +318,8 @@ class RoundRobinScheduler:
             # check if task completed
             if self.execThreadQueue[self.executingThreadIdx].task.remainingTime <= 0:
                 # call compeletion handler
-                self.execThreadQueue[self.executingThreadIdx].threadCompleted(self.cpu.currentCpuTime, self.usersList)
+                uId = self.execThreadQueue[self.executingThreadIdx].threadCompleted(self.cpu.currentCpuTime, self.usersList)
+                completedUser = self.usersList.get_user(uId)
 
             # remove thread from queue
             del self.execThreadQueue[self.executingThreadIdx]
@@ -333,7 +355,7 @@ class RoundRobinScheduler:
             self.cpu.cpuState = CPUState.IDLE
             self.currentTimeQuanta = 0
             self.executingThreadIdx = -1
-            return self.cpu.currentCpuTime
+            return completedUser
         
 
         # add context switch overhead to the cpu time 
@@ -352,8 +374,8 @@ class RoundRobinScheduler:
         # set the index of next scheduled thread
         self.executingThreadIdx = nextIdx
         
-        # return the cpu time
-        return self.cpu.currentCpuTime
+        # return completed user
+        return completedUser
 
 
 # class to represent a list of schedulers
@@ -392,5 +414,117 @@ class SchedulerList:
         return schd
 
 
+@dataclass
+class TaskQueue:
+    maxQueueLength: int
+    queue: list[Task] = field(init=False, default_factory=list)
 
+    def enqueue(self, t_task: Task) -> None:
+        "Adds a task to the queue"
+        # add only if the queue length is less than the max length
+        assert len(self.queue) < self.maxQueueLength
+        self.queue.insert(0, t_task)
+    
+    def dequeue(self) -> Task:
+        '''Pops and returns task in FIFO order'''
+        assert len(self.queue) != 0
+        return self.queue.pop()
+    
+    def peek(self) -> Task:
+        '''Returns the top task without poppping'''
+        return self.queue[-1]
 
+    def length(self) -> int:
+        '''Retutns length of the queue'''
+        return len(self.queue)
+    
+    def isFull(self) -> bool:
+        '''Returns if the task queue is full'''
+        return self.length() == self.maxQueueLength
+
+@dataclass(order=True)
+class Event:
+    # class to represent event details
+    eventTime: int
+    eventType: EventType
+    associatedObject: object = field(compare=False)
+
+    def __eq__(self, __o: object) -> bool:
+        '''all fields are equal'''
+        return self.eventTime == __o.eventTime and self.eventType == __o.eventType and id(self.associatedObject) == id(__o.associatedObject)
+
+@dataclass
+class EventList:
+    events: list[Event] = field(init=False, default_factory=list)
+
+    def addEvent(self, event: Event) -> None:
+        '''Adds a new event to the pq'''
+        ## if same event is not already in the heap then add
+        if event not in self.events:
+            heapq.heappush(self.events, event)
+    
+    def getNextEvent(self) -> Event:
+        '''returns the top event'''
+        return heapq.heappop(self.events)
+    
+
+class EventHandlers:
+
+    @staticmethod
+    def arrivalEventHandler(t_user: User, schedulers: SchedulerList, taskQueue: TaskQueue, eventsList: EventList) -> None:
+        # apply arrival logic
+        # get a free cpu 
+        freeSched = schedulers.getAScheduler()
+        t_task = t_user.sendRequest()
+        if freeSched == None:
+            # check if queue is full
+            if taskQueue.isFull():
+                # then drop the request
+                t_user.droppedRequest()
+            else:
+                print(f"|{'ENQUEUE':15s}|{t_task.arrivalTime:<10d}|{f'USERID {t_user.userId}':10s}|{f'TASKID {t_task.taskId}':10s}|{f'QLEN {taskQueue.length()}':10s}")
+                # add task to the queue
+                taskQueue.enqueue(t_user.task)
+                # TODO: to record the queue length?
+        else:
+            cpuIdle = freeSched.addTaskAndCreateThread(t_task)
+            # if cpu was idle, then add a new execution event
+            if cpuIdle:
+                eventsList.addEvent(Event(freeSched.cpu.currentCpuTime, EventType.EXECUTION, freeSched))
+
+    @staticmethod
+    def executionEventHandler(sched: RoundRobinScheduler, eventsList: EventList) -> None:
+        sched.executeCurrentThread()
+        # Add context switch event to the events list
+        eventsList.addEvent(Event(sched.cpu.currentCpuTime, EventType.CTXSWITCH, sched))
+
+    @staticmethod
+    def contextSwitchEventHandler(sched: RoundRobinScheduler, taskQueue: TaskQueue, schedulers: SchedulerList, usersList: UserList, eventsList: EventList) -> None:
+        completedUser = sched.contextSwitch()
+
+        # add the next Execution event 
+        if sched.cpu.cpuState != CPUState.IDLE:
+            eventsList.addEvent(Event(sched.cpu.currentCpuTime, EventType.EXECUTION, sched))
+
+        # check is task_queue is not empty
+        if taskQueue.length() != 0 and not sched.isThreadQueueFull():
+            # check if current cpu is free
+            # add dequeue event to the list
+            eventsList.addEvent(Event(max(taskQueue.peek().arrivalTime,sched.cpu.currentCpuTime), EventType.DEQUEUE, sched))
+        
+        # if a user is completed, then add next arrival event
+        if completedUser != None:
+            eventsList.addEvent(Event(completedUser.task.arrivalTime, EventType.ARRIVAL, completedUser))
+        
+        
+    
+    @staticmethod
+    def dequeEventHandler(sched: RoundRobinScheduler, taskQueue: TaskQueue, eventsList: EventList ) -> None:
+        # deque from the task queue and create a thread in scheduler
+        
+        print(f"|{'DEQUEUE':15s}|{sched.cpu.currentCpuTime:<10d}|{f'CPUID {sched.cpu.cpuId}':10s}|{f'TASKID {taskQueue.peek().taskId}':10s}|{f'QLEN {taskQueue.length()-1}':10s}")
+        cpuIdle = sched.addTaskAndCreateThread(taskQueue.dequeue())
+        if cpuIdle:
+            eventsList.addEvent(Event(sched.cpu.currentCpuTime, EventType.EXECUTION, sched))
+
+    

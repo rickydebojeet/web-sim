@@ -10,11 +10,14 @@ class simulator:
         self.counters = Counters()
         self.usersList = UserList()
     
+
+
     def run_simulation(self, num_users, think_time, avg_service_time, context_switch_time, avg_interarrival_time, timeout, simulation_time, ctxSwOverhead, maxQueueSize, retryProb, retryTime, rseed = 1, rstream = 0) -> None:
         
-        task_queue = []
+        task_queue = TaskQueue(maxQueueSize)
         schedulers = SchedulerList()
-        
+        eventsList = EventList()
+
         self.simulation_time = simulation_time
 
         # initialise the random number generator
@@ -26,68 +29,35 @@ class simulator:
             t_user = User(i, think_time, avg_interarrival_time, avg_service_time, timeout, retryProb, retryTime, self.counters)
             self.usersList.add_user(t_user)
         
+        # initially add all arrival events
+        for user in self.usersList.get_all_ready_users():
+            eventsList.addEvent(Event(user.task.arrivalTime, EventType.ARRIVAL, user))
+
         # create scheduler for each cpu
         for cpu in self.cpus:
             schedulers.add(RoundRobinScheduler(context_switch_time, ctxSwOverhead, cpu, self.max_threads, self.usersList, self.counters ))
             
 
         while True:
-            # get next user event
-            nextUser = self.usersList.get_next_sender()
-            # get next scheduler event
-            nextSched = schedulers.nextEvent()
-
-            ## if both are none then assert error
-            assert nextUser != None or nextSched != None
-
-
-            if nextUser != None and (nextSched == None or nextUser.task.arrivalTime < nextSched.getNextContextSwitchTime()):
-                
-                # check if simulation time is over
-                if nextUser.task.arrivalTime > simulation_time:
-                    break
-                
-                # apply arrival logic
-                # get a free cpu 
-                freeSched = schedulers.getAScheduler()
-                t_task = nextUser.sendRequest()
-                if freeSched == None:
-                    # check if queue is full
-                    if len(task_queue) == maxQueueSize:
-                        # then add drop the request
-                        nextUser.droppedRequest()
-                    else:
-                        print(f"|{'ENQUEUE':15s}|{nextUser.task.arrivalTime:<10d}|{f'USERID {nextUser.userId}':10s}|{f'TASKID {nextUser.task.taskId}':10s}|{f'QLEN {len(task_queue)}':10s}")
-                        # add task to the queue
-                        task_queue.insert(0, t_task)
-
-                    # TODO: to record the queue length?
-                else:
-                    freeSched.addTaskAndCreateThread(t_task)
             
-            else:
+            # get next event
+            nextEvent = eventsList.getNextEvent()
+
+            # check if simulation is over
+            if nextEvent.eventTime > simulation_time:
+                break
+
+            # call the event handler
+            if nextEvent.eventType == EventType.ARRIVAL:
+                EventHandlers.arrivalEventHandler(nextEvent.associatedObject, schedulers, task_queue, eventsList)
+            elif nextEvent.eventType == EventType.EXECUTION:
+                EventHandlers.executionEventHandler(nextEvent.associatedObject, eventsList)
+            elif nextEvent.eventType == EventType.CTXSWITCH:
+                EventHandlers.contextSwitchEventHandler(nextEvent.associatedObject, task_queue, schedulers, self.usersList, eventsList)
+            elif nextEvent.eventType == EventType.DEQUEUE:
+                EventHandlers.dequeEventHandler(nextEvent.associatedObject, task_queue, eventsList)
+
                 
-                # check if simulation time is over
-                if nextSched.getNextContextSwitchTime() > simulation_time:
-                    break
-
-                # the next event is scheduler event
-                nextSched.executeCurrentThread()
-                nextSched.contextSwitch()
-
-                # check is task_queue is not empty
-                while len(task_queue) != 0:
-                    # check if any cpu is free
-                    freeSched = schedulers.getAScheduler()
-                    
-                    # not free cpu
-                    if freeSched == None:
-                        break
-                    
-                    print(f"|{'DEQUEUE':15s}|{freeSched.cpu.currentCpuTime:<10d}|{f'CPUID {freeSched.cpu.cpuId}':10s}|{f'TASKID {task_queue[-1].taskId}':10s}|{f'QLEN {len(task_queue)-1}':10s}")
-
-                    # add task to scheduler
-                    freeSched.addTaskAndCreateThread(task_queue.pop())
 
     
     def getAvgResponseTime(self) -> float:
@@ -110,7 +80,7 @@ class simulator:
         completedRequests = 0
         for user in self.usersList.get_all_users():
             for com_task in user.completedTasks:
-                if com_task.completionState != TaskCompletionState.SUCCESS:
+                if com_task.completionState == TaskCompletionState.SUCCESS:
                     completedRequests += 1
         
         # divide by simulation time
@@ -122,7 +92,7 @@ class simulator:
         timedOutRequests = 0
         for user in self.usersList.get_all_users():
             for com_task in user.completedTasks:
-                if com_task.completionState != TaskCompletionState.TIMEOUT:
+                if com_task.completionState == TaskCompletionState.TIMEOUT:
                     timedOutRequests += 1
         
         # divide by simulation time
