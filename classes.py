@@ -269,6 +269,8 @@ class RoundRobinScheduler:
         
         # update waiting in thread time
         thread.task.waitingTimeForThread = self.cpu.currentCpuTime - thread.task.arrivalTime
+        # update thread state to ready
+        thread.threadState = ThreadState.READY
         return cpuIdle
 
     def addTaskAndCreateThread(self, t_task: Task) -> bool:
@@ -296,6 +298,8 @@ class RoundRobinScheduler:
     def executeCurrentThread(self):
         '''Executes the current thread'''
         if self.executingThreadIdx != -1:
+            # Set thread state to runnning
+            self.execThreadQueue[self.executingThreadIdx].threadState = ThreadState.RUNNING
             # update cpu stats
             print(f"|{'EXECUTE':15s}|{self.cpu.currentCpuTime:<10d}|{f'CPUID {self.cpu.cpuId}':10s}|{f'TID {self.execThreadQueue[self.executingThreadIdx].threadId}':10s}|{f'FOR {self.currentTimeQuanta}':10s}|")
             self.cpu.currentCpuTime += self.currentTimeQuanta
@@ -367,9 +371,6 @@ class RoundRobinScheduler:
 
         # set the next time_quanta
         self.currentTimeQuanta = min(self.maxTimeQuanta, self.execThreadQueue[nextIdx].task.remainingTime)
-
-        # Set thread as running
-        self.execThreadQueue[nextIdx].threadState = ThreadState.RUNNING
 
         # set the index of next scheduled thread
         self.executingThreadIdx = nextIdx
