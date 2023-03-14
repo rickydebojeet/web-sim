@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from math import log
 from lcgrand import *
-from typing import ClassVar
+from abc import ABC, abstractmethod
 import heapq
 
 def exponf(mean: float) -> float:
@@ -230,8 +230,7 @@ class Thread:
 
 
 @dataclass
-class RoundRobinScheduler:
-    maxTimeQuanta: int
+class Scheduler(ABC):
     contextSwitchOverhead: int
     cpu: CPU
     maxThreadQueueSize: int
@@ -244,6 +243,11 @@ class RoundRobinScheduler:
     def isThreadQueueFull(self)->bool:
         '''Returns true if thread queue is full'''
         return len(self.execThreadQueue) == self.maxThreadQueueSize
+    
+    @abstractmethod
+    def getNextTimeQuanta(self, t_task: Task) -> int:
+        '''Returns time quanta'''
+        pass
 
     def addThread(self, thread: Thread) -> bool:
         '''Adds a new thread to the thread queue
@@ -260,7 +264,7 @@ class RoundRobinScheduler:
             assert self.cpu.cpuState == CPUState.IDLE
             cpuIdle = True
             # update current time quanta
-            self.currentTimeQuanta = min(thread.task.remainingTime, self.maxTimeQuanta)
+            self.currentTimeQuanta = self.getNextTimeQuanta(thread.task)
             self.executingThreadIdx = 0
             # set cpu to BUSY
             self.cpu.cpuState = CPUState.BUSY
@@ -370,7 +374,7 @@ class RoundRobinScheduler:
             self.cpu.totalExecutionTime += self.contextSwitchOverhead
 
         # set the next time_quanta
-        self.currentTimeQuanta = min(self.maxTimeQuanta, self.execThreadQueue[nextIdx].task.remainingTime)
+        self.currentTimeQuanta = self.getNextTimeQuanta(self.execThreadQueue[nextIdx].task)
 
         # set the index of next scheduled thread
         self.executingThreadIdx = nextIdx
@@ -379,19 +383,34 @@ class RoundRobinScheduler:
         return completedUser
 
 
+@dataclass
+class RoundRobinScheduler(Scheduler):
+    maxTimeQuanta: int
+
+    def getNextTimeQuanta(self, t_task: Task) -> int:
+        '''Returns time quanta'''
+        return min(t_task.remainingTime, self.maxTimeQuanta)
+
+@dataclass
+class FIFOScheduler(Scheduler):
+
+    def getNextTimeQuanta(self, t_task: Task) -> int:
+        '''Returns time quanta'''
+        return t_task.remainingTime
+
 # class to represent a list of schedulers
 @dataclass
 class SchedulerList:
-    schedulers: list[RoundRobinScheduler] = field(init=False, default_factory=list)
+    schedulers: list[Scheduler] = field(init=False, default_factory=list)
 
-    def add(self,sch: RoundRobinScheduler)-> None:
+    def add(self,sch: Scheduler)-> None:
         '''Adds a scheduler to the list'''
         self.schedulers.append(sch)
     
     def __getitem__(self, key):
         return self.schedulers[key]
 
-    def getAScheduler(self)->RoundRobinScheduler:
+    def getAScheduler(self)->Scheduler:
         '''Returns a scheduler with cpu that fewest threads
         returns None if all scheduler is fully occupied'''
 
@@ -402,7 +421,7 @@ class SchedulerList:
         
         return targetSched
     
-    def nextEvent(self)->RoundRobinScheduler:
+    def nextEvent(self)->Scheduler:
         '''Returns the time of next event and associated scheduler
         None if there is no event'''
         
@@ -494,13 +513,13 @@ class EventHandlers:
                 eventsList.addEvent(Event(freeSched.cpu.currentCpuTime, EventType.EXECUTION, freeSched))
 
     @staticmethod
-    def executionEventHandler(sched: RoundRobinScheduler, eventsList: EventList) -> None:
+    def executionEventHandler(sched: Scheduler, eventsList: EventList) -> None:
         sched.executeCurrentThread()
         # Add context switch event to the events list
         eventsList.addEvent(Event(sched.cpu.currentCpuTime, EventType.CTXSWITCH, sched))
 
     @staticmethod
-    def contextSwitchEventHandler(sched: RoundRobinScheduler, taskQueue: TaskQueue, schedulers: SchedulerList, usersList: UserList, eventsList: EventList) -> None:
+    def contextSwitchEventHandler(sched: Scheduler, taskQueue: TaskQueue, schedulers: SchedulerList, usersList: UserList, eventsList: EventList) -> None:
         completedUser = sched.contextSwitch()
 
         # add the next Execution event 
@@ -520,7 +539,7 @@ class EventHandlers:
         
     
     @staticmethod
-    def dequeEventHandler(sched: RoundRobinScheduler, taskQueue: TaskQueue, eventsList: EventList ) -> None:
+    def dequeEventHandler(sched: Scheduler, taskQueue: TaskQueue, eventsList: EventList ) -> None:
         # deque from the task queue and create a thread in scheduler
         
         print(f"|{'DEQUEUE':15s}|{sched.cpu.currentCpuTime:<10d}|{f'CPUID {sched.cpu.cpuId}':10s}|{f'TASKID {taskQueue.peek().taskId}':10s}|{f'QLEN {taskQueue.length()-1}':10s}")

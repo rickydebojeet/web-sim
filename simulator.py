@@ -1,5 +1,9 @@
 from classes import *
+from enum import Enum
 
+class SchedulerType(Enum):
+    ROUNDROBIN = 0
+    FIFO = 1
 
 class simulator:
     
@@ -12,7 +16,7 @@ class simulator:
     
 
 
-    def run_simulation(self, num_users, think_time, avg_service_time, context_switch_time, avg_interarrival_time, timeout, simulation_time, ctxSwOverhead, maxQueueSize, retryProb, retryTime, rseed = 1, rstream = 0) -> None:
+    def run_simulation(self, num_users, think_time, avg_service_time, context_switch_time, avg_interarrival_time, timeout, simulation_time, ctxSwOverhead, maxQueueSize, retryProb, retryTime, schedulerType: SchedulerType,  rseed = 1, rstream = 0) -> None:
         
         task_queue = TaskQueue(maxQueueSize)
         schedulers = SchedulerList()
@@ -34,9 +38,14 @@ class simulator:
             eventsList.addEvent(Event(user.task.arrivalTime, EventType.ARRIVAL, user))
 
         # create scheduler for each cpu
-        for cpu in self.cpus:
-            schedulers.add(RoundRobinScheduler(context_switch_time, ctxSwOverhead, cpu, self.max_threads, self.usersList, self.counters ))
-            
+        if schedulerType == SchedulerType.ROUNDROBIN:
+            for cpu in self.cpus:
+                schedulers.add(RoundRobinScheduler(ctxSwOverhead, cpu, self.max_threads, self.usersList, self.counters, context_switch_time))
+        elif schedulerType == SchedulerType.ROUNDROBIN:
+            for cpu in self.cpus:
+                schedulers.add(FIFOScheduler(ctxSwOverhead, cpu, self.max_threads, self.usersList, self.counters))
+        else:
+            assert False
 
         while True:
             
@@ -118,7 +127,7 @@ class simulator:
 def main():
     CLOCKS_PER_SEC = 1000000
     sim = simulator(1, 200)
-    sim.run_simulation(15, 10000000, 80000, 20000, 100000, 2000000, 300000000, 1000, 10, 0.5, 500000)
+    sim.run_simulation(15, 10000000, 80000, 20000, 100000, 2000000, 300000000, 1000, 10, 0.5, 500000, SchedulerType.ROUNDROBIN)
     print(f'Response time: {sim.getAvgResponseTime() / CLOCKS_PER_SEC} s')
     print(f'Goodput: {sim.getGoodPut() * CLOCKS_PER_SEC} req/s')
     print(f'Badput: {sim.getBadPut() * CLOCKS_PER_SEC} req/s')
