@@ -76,6 +76,7 @@ class Task:
     totalContextSwitchOverhead: int = field(default=0, init=False)
     completionState: TaskCompletionState = field(init=False)
     numRetries: int = field(init=False, default=0)
+    queueLengthObserved: int = field(init=False, default=0)
 
 
 # The CPU class represents a core
@@ -134,12 +135,12 @@ class User:
         '''Method to handle request drops'''
         # with probability p retry the request 
         if lcgrand() <= self.retryProb:
-            print(f"|{'RETRY':15s}|{self.task.arrivalTime:<10d}|{f'USERID {self.userId}':10s}|{f'TASKID {self.task.taskId}':10s}|{f'RETRYN {self.task.numRetries}':10s}|")
             # retry
             self.task.arrivalTime += expon(self.retryTime)
             self.task.numRetries += 1
             # change the state of the user
             self.userState = UserState.READY
+            print(f"|{'RETRY':15s}|{self.task.arrivalTime:<10d}|{f'USERID {self.userId}':10s}|{f'TASKID {self.task.taskId}':10s}|{f'RETRYN {self.task.numRetries}':10s}|")
         else:
             print(f"|{'DROPPED':15s}|{self.task.arrivalTime:<10d}|{f'USERID {self.userId}':10s}|{f'TASKID {self.task.taskId}':10s}|{f'RETRYN {self.task.numRetries}':10s}|")
             # mark the request as dropped
@@ -160,8 +161,11 @@ class User:
         # add current task to completed tasks list
         self.completedTasks.append(self.task)
         
+        # think time is combination of min fixed + variable time
+        think_time = round(0.8 * self.thinkTime) + expon(round(0.2 * self.thinkTime))
+
         # create a new task
-        self.createTask(self.completedTasks[-1].departureTime + self.thinkTime)
+        self.createTask(self.completedTasks[-1].departureTime + think_time)
 
         # set userState to ready
         self.userState = UserState.READY
@@ -402,10 +406,12 @@ class FIFOScheduler(Scheduler):
 @dataclass
 class SchedulerList:
     schedulers: list[Scheduler] = field(init=False, default_factory=list)
+    countsTaskAdded: dict[int,int] = field(init=False, default_factory=dict)
 
     def add(self,sch: Scheduler)-> None:
         '''Adds a scheduler to the list'''
         self.schedulers.append(sch)
+        self.countsTaskAdded[sch.cpu.cpuId] = 0
     
     def __getitem__(self, key):
         return self.schedulers[key]
@@ -414,11 +420,23 @@ class SchedulerList:
         '''Returns a scheduler with cpu that fewest threads
         returns None if all scheduler is fully occupied'''
 
-        targetSched = min(self.schedulers, key=lambda x: len(x.execThreadQueue))
-        
-        if targetSched.isThreadQueueFull():
+        minQSched = min(self.schedulers, key=lambda x: len(x.execThreadQueue))
+
+        if minQSched.isThreadQueueFull():
             return None
+
+        # if more than 1 schedulers have min thread queue count,
+        # then return the one which has least countsTaskAdded value
+
+        tScheds = [ x for x in  self.schedulers if len(x.execThreadQueue) == len(minQSched.execThreadQueue) ]
         
+        targetSched = minQSched
+
+        if len(tScheds) > 1:
+            targetSched = min(tScheds, key=lambda x: self.countsTaskAdded[x.cpu.cpuId])
+            
+        # increase count
+        self.countsTaskAdded[targetSched.cpu.cpuId] += 1
         return targetSched
     
     def nextEvent(self)->Scheduler:
@@ -491,35 +509,37 @@ class EventList:
 class EventHandlers:
 
     @staticmethod
-    def arrivalEventHandler(t_user: User, schedulers: SchedulerList, taskQueue: TaskQueue, eventsList: EventList) -> None:
+    def arrivalEventHandler(eventTime: int, t_user: User, schedulers: SchedulerList, taskQueue: TaskQueue, eventsList: EventList) -> None:
         # apply arrival logic
-        # get a free cpu 
-        freeSched = schedulers.getAScheduler()
+        # check if queue is full
         t_task = t_user.sendRequest()
-        if freeSched == None:
-            # check if queue is full
-            if taskQueue.isFull():
-                # then drop the request
-                t_user.droppedRequest()
-            else:
-                print(f"|{'ENQUEUE':15s}|{t_task.arrivalTime:<10d}|{f'USERID {t_user.userId}':10s}|{f'TASKID {t_task.taskId}':10s}|{f'QLEN {taskQueue.length()}':10s}")
-                # add task to the queue
-                taskQueue.enqueue(t_user.task)
-                # TODO: to record the queue length?
+
+        if taskQueue.isFull():
+            # then drop the request
+            t_user.droppedRequest()
         else:
-            cpuIdle = freeSched.addTaskAndCreateThread(t_task)
-            # if cpu was idle, then add a new execution event
-            if cpuIdle:
-                eventsList.addEvent(Event(freeSched.cpu.currentCpuTime, EventType.EXECUTION, freeSched))
+            print(f"|{'ENQUEUE':15s}|{eventTime:<10d}|{f'USERID {t_user.userId}':10s}|{f'TASKID {t_task.taskId}':10s}|{f'QLEN {taskQueue.length()}':10s}")
+            # record the queue length
+            t_task.queueLengthObserved = taskQueue.length()
+            # add task to the queue
+            taskQueue.enqueue(t_user.task)
+            # TODO: to record the queue length?
+        
+            # check if any cpu is free
+            # get a free cpu 
+            freeSched = schedulers.getAScheduler()
+            if freeSched != None:
+                # create a deque event at the next context switch time
+                eventsList.addEvent(Event(max(eventTime, freeSched.getNextContextSwitchTime()), EventType.DEQUEUE, freeSched))
 
     @staticmethod
-    def executionEventHandler(sched: Scheduler, eventsList: EventList) -> None:
+    def executionEventHandler(eventTime: int, sched: Scheduler, eventsList: EventList) -> None:
         sched.executeCurrentThread()
         # Add context switch event to the events list
         eventsList.addEvent(Event(sched.cpu.currentCpuTime, EventType.CTXSWITCH, sched))
 
     @staticmethod
-    def contextSwitchEventHandler(sched: Scheduler, taskQueue: TaskQueue, schedulers: SchedulerList, usersList: UserList, eventsList: EventList) -> None:
+    def contextSwitchEventHandler(eventTime: int, sched: Scheduler, taskQueue: TaskQueue, schedulers: SchedulerList, usersList: UserList, eventsList: EventList) -> None:
         completedUser = sched.contextSwitch()
 
         # add the next Execution event 
@@ -539,11 +559,14 @@ class EventHandlers:
         
     
     @staticmethod
-    def dequeEventHandler(sched: Scheduler, taskQueue: TaskQueue, eventsList: EventList ) -> None:
+    def dequeEventHandler(eventTime: int, sched: Scheduler, taskQueue: TaskQueue, eventsList: EventList ) -> None:
+        # if schduler is still not free, then don't deque
+        if sched.isThreadQueueFull() or taskQueue.length() == 0:
+            return
         # deque from the task queue and create a thread in scheduler
-        
-        print(f"|{'DEQUEUE':15s}|{sched.cpu.currentCpuTime:<10d}|{f'CPUID {sched.cpu.cpuId}':10s}|{f'TASKID {taskQueue.peek().taskId}':10s}|{f'QLEN {taskQueue.length()-1}':10s}")
-        cpuIdle = sched.addTaskAndCreateThread(taskQueue.dequeue())
+        print(f"|{'DEQUEUE':15s}|{eventTime:<10d}|{f'CPUID {sched.cpu.cpuId}':10s}|{f'TASKID {taskQueue.peek().taskId}':10s}|{f'QLEN {taskQueue.length()-1}':10s}")
+        ts = taskQueue.dequeue()
+        cpuIdle = sched.addTaskAndCreateThread(ts)
         if cpuIdle:
             eventsList.addEvent(Event(sched.cpu.currentCpuTime, EventType.EXECUTION, sched))
 
