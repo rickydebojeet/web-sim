@@ -74,22 +74,22 @@ def generate_data(output_file_name: str, schedulerType: SchedulerType):
         badPuts = []
         requestDropRates = []
         coreUtilsations = []
-        numRetriesPerTask = []
+        avgQueueLength = []
         avgWaitingTimeInQueue = []
 
         for i in range(NUM_RUNS):
             sim = simulator(NUM_CPUS, MAX_THREADS)
 
-            sim.run_simulation(n_user, THINK_TIME, AVG_SERVICE_TIME, QUANTA_BURST_TIME, AVG_INTERARRIVAL_TIME, TIMEOUT, SIMULATION_TIME, CTX_SWITCH_OVERHEAD, MAX_QUEUE_SIZE, RETRY_PROB, RETRY_DELAY, SchedulerType.ROUNDROBIN, SEEDS[i], i)
+            sim.run_simulation(n_user, THINK_TIME, AVG_SERVICE_TIME, QUANTA_BURST_TIME, AVG_INTERARRIVAL_TIME, TIMEOUT, SIMULATION_TIME, CTX_SWITCH_OVERHEAD, MAX_QUEUE_SIZE, RETRY_PROB, RETRY_DELAY, schedulerType, SEEDS[i], i)
 
             responseTimes.append(sim.getAvgResponseTime() / CLOCKS_PER_SEC)
             goodPuts.append(sim.getGoodPut() * CLOCKS_PER_SEC)
             badPuts.append(sim.getBadPut() * CLOCKS_PER_SEC)
             requestDropRates.append(sim.getRequestDropRate() * CLOCKS_PER_SEC)
             coreUtilsations.append(sim.getCoreUtilisation())
-            numRetriesPerTask.append(sim.getAvgQueueLength())
+            avgQueueLength.append(sim.getAvgQueueLength())
             avgWaitingTimeInQueue.append(sim.getAvgWaitingTimeInQueue() / CLOCKS_PER_SEC)
-        write_data_row(writer, n_user, responseTimes, goodPuts, badPuts, requestDropRates, coreUtilsations, numRetriesPerTask, avgWaitingTimeInQueue)       
+        write_data_row(writer, n_user, responseTimes, goodPuts, badPuts, requestDropRates, coreUtilsations, avgQueueLength, avgWaitingTimeInQueue)       
     file.close()
 
 

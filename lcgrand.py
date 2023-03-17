@@ -30,8 +30,7 @@ class lcg:
         self.activeStream = 0
 
     def lcgSetActiveStream(self, stream: int) -> None:
-        global activeStream
-        activeStream = stream
+        self.activeStream = stream
 
     def lcgrand(self, stream_c : int = None) -> float:
         stream = self.activeStream if stream_c == None else stream_c
