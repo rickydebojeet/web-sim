@@ -5,11 +5,11 @@ from lcgrand import *
 from abc import ABC, abstractmethod
 import heapq
 
-def exponf(mean: float) -> float:
-    return (-mean) * log(lcgrand())
+def exponf(mean: float, generator: lcg) -> float:
+    return (-mean) * log(generator.lcgrand())
 
-def expon(mean: int) -> int:
-    return round((-mean) * log(lcgrand()))
+def expon(mean: int, generator: lcg) -> int:
+    return round((-mean) * log(generator.lcgrand()))
 
 class ThreadState(Enum):
     CREATED = 1
@@ -101,22 +101,23 @@ class User:
     retryProb: float
     retryTime: int
     counters: Counters
+    randGen: lcg
     task: Task = field(init=False)
     completedTasks: list[Task] = field(init=False, default_factory=list)
     userState: UserState = field(default=UserState.READY, init=False)
 
     def __post_init__(self):
         '''Add initial task for the user'''
-        self.createTask(expon(self.avgInterarrivalTime))
+        self.createTask(expon(self.avgInterarrivalTime, self.randGen))
 
     def createTask(self, arrivalTime: int)->None:
         '''Creates a new task for the given arrival time'''
         # get service timeout from distribution
-        dist_service_time = expon(self.avgServiceTime)
+        dist_service_time = expon(self.avgServiceTime, self.randGen)
 
         # 50% of the timeout is minimum and rest is exponential
         min_timeout = self.timeoutDuration // 2
-        var_timeout = expon(self.timeoutDuration - min_timeout)
+        var_timeout = expon(self.timeoutDuration - min_timeout, self.randGen)
         total_timeout = min_timeout + var_timeout
 
         self.task = Task(self.counters.getTaskIdCounter(), self.userId, arrivalTime, dist_service_time, total_timeout, dist_service_time)
@@ -134,9 +135,9 @@ class User:
     def droppedRequest(self) -> None: 
         '''Method to handle request drops'''
         # with probability p retry the request 
-        if lcgrand() <= self.retryProb:
+        if self.randGen.lcgrand() <= self.retryProb:
             # retry
-            self.task.arrivalTime += expon(self.retryTime)
+            self.task.arrivalTime += expon(self.retryTime, self.randGen)
             self.task.numRetries += 1
             # change the state of the user
             self.userState = UserState.READY
@@ -162,7 +163,7 @@ class User:
         self.completedTasks.append(self.task)
         
         # think time is combination of min fixed + variable time
-        think_time = round(0.8 * self.thinkTime) + expon(round(0.2 * self.thinkTime))
+        think_time = round(0.8 * self.thinkTime) + expon(round(0.2 * self.thinkTime), self.randGen)
 
         # create a new task
         self.createTask(self.completedTasks[-1].departureTime + think_time)

@@ -25,12 +25,13 @@ class simulator:
         self.simulation_time = simulation_time
 
         # initialise the random number generator
-        lcgrandst(rseed, rstream)
-        lcgSetActiveStream(rstream)
+        rangGen = lcg()
+        rangGen.lcgrandst(rseed, rstream)
+        rangGen.lcgSetActiveStream(rstream)
         
         for i in range(num_users):
             # initilise users
-            t_user = User(i, think_time, avg_interarrival_time, avg_service_time, timeout, retryProb, retryTime, self.counters)
+            t_user = User(i, think_time, avg_interarrival_time, avg_service_time, timeout, retryProb, retryTime, self.counters, rangGen)
             self.usersList.add_user(t_user)
         
         # initially add all arrival events
@@ -150,8 +151,8 @@ class simulator:
 
 def main():
     CLOCKS_PER_SEC = 1000000
-    sim = simulator(2, 50)
-    sim.run_simulation(350, 10000000, 80000, 20000, 100000, 2000000, 300000000, 1000, 200, 0.5, 5000, SchedulerType.ROUNDROBIN)
+    sim = simulator(2, 10)
+    sim.run_simulation(600, 10000000, 80000, 20000, 1000000, 2000000, 300000000, 1000, 200, 0.5, 5000, SchedulerType.FIFO)
     print(f'Response time: {sim.getAvgResponseTime() / CLOCKS_PER_SEC} s')
     print(f'Goodput: {sim.getGoodPut() * CLOCKS_PER_SEC} req/s')
     print(f'Badput: {sim.getBadPut() * CLOCKS_PER_SEC} req/s')
