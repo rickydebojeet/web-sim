@@ -66,7 +66,7 @@ load_data(FIFO_DATA_FILE, numUsersFIFO, responseTimesFIFO, goodPutsFIFO, badPuts
 
 
 # %%
-
+plt.clf()
 plt.plot(numUsersRR, list(map(avg, goodPutsRR)), label='Round Robin')
 plt.plot(numUsersFIFO, list(map(avg, goodPutsFIFO)), label='FIFO')
 plt.xlabel('Number of users')
@@ -79,6 +79,7 @@ plt.savefig('graphs/goodput.png')
 # plt.show()
 
 # %%
+plt.clf()
 plt.plot(numUsersRR, list(map(avg, badPutsRR)), label='Round Robin')
 plt.plot(numUsersFIFO, list(map(avg, badPutsFIFO)), label='FIFO')
 plt.xlabel('Number of users')
@@ -91,6 +92,7 @@ plt.savefig('graphs/badput.png')
 # plt.show()
 
 # %%
+plt.clf()
 plt.plot(numUsersRR, [ sum(x)  for x in zip( map(avg, goodPutsRR) , map(avg, badPutsRR)) ], label='Round Robin')
 plt.plot(numUsersFIFO, [ sum(x)  for x in zip( map(avg, goodPutsFIFO) , map(avg, badPutsFIFO)) ], label='FIFO')
 plt.xlabel('Number of users')
@@ -103,6 +105,7 @@ plt.savefig('graphs/throughput.png')
 # plt.show()
 
 # %%
+plt.clf()
 plt.plot(numUsersRR, list(map(avg, requestDropRatesRR)), label='Round Robin')
 plt.plot(numUsersFIFO, list(map(avg, requestDropRatesFIFO)), label='FIFO')
 plt.xlabel('Number of users')
@@ -115,6 +118,7 @@ plt.legend()
 plt.savefig('graphs/req_drop_rate.png')
 
 # %%
+plt.clf()
 plt.plot(numUsersRR, list(map(avg, coreUtilisationsRR)), label='Round Robin')
 plt.plot(numUsersFIFO, list(map(avg, coreUtilisationsFIFO)), label='FIFO')
 plt.xlabel('Number of users')
@@ -127,6 +131,7 @@ plt.savefig('graphs/utilisation.png')
 # plt.show()
 
 # %%
+plt.clf()
 plt.plot(numUsersRR, list(map(avg, avgQueueLengthRR)), label='Round Robin')
 plt.plot(numUsersFIFO, list(map(avg, avgQueueLengthFIFO)), label='FIFO')
 plt.xlabel('Number of users')
@@ -139,6 +144,7 @@ plt.savefig('graphs/avg_queue_len.png')
 # plt.show()
 
 # %%
+plt.clf()
 plt.plot(numUsersRR, list(map(avg, avgWaitingTimeInQueueRR)), label='Round Robin')
 plt.plot(numUsersFIFO, list(map(avg, avgWaitingTimeInQueueFIFO)), label='FIFO')
 plt.xlabel('Number of users')
@@ -165,54 +171,58 @@ def plot_confidence_interval(x: int, values: list[float], z: float, color: str) 
 
 
 # %%
+plt.clf()
 for i in range(len(numUsersRR)):
     plot_confidence_interval(numUsersRR[i], responseTimesRR[i], 1.96, 'tab:blue')
 
 plt.xlabel('Number of users')
 plt.ylabel('Response Time (s)')
-plt.title('Response Time Confidence Interval vs Number of Users (M) [RoundRobin]')
+plt.title('Response Time Confidence Interval (90%) vs Number of Users (M) [RoundRobin]')
 plt.minorticks_on()
 plt.grid(True, 'both')
 plt.savefig('graphs/resp_time_ci_rr.png')
 # plt.show()
 
 # %%
+plt.clf()
 for i in range(min(15, len(numUsersRR))):
     plot_confidence_interval(numUsersRR[i], responseTimesRR[i], 1.96, 'tab:blue')
 
 plt.xlabel('Number of users')
 plt.ylabel('Response Time (s)')
-plt.title('Response Time Confidence Interval vs Number of Users (M) [RoundRobin]')
+plt.title('Response Time Confidence Interval (90%) vs Number of Users (M) [RoundRobin]')
 plt.minorticks_on()
 plt.grid(True, 'both')
 plt.savefig('graphs/resp_time_ci_rr_zoomed.png')
 # plt.show()
 
 # %%
+plt.clf()
 for i in range(len(numUsersFIFO)):
     plot_confidence_interval(numUsersFIFO[i], responseTimesFIFO[i], 1.96, 'tab:orange')
 
 plt.xlabel('Number of users')
 plt.ylabel('Response Time (s)')
-plt.title('Response Time Confidence Interval vs Number of Users (M) [FIFO]')
+plt.title('Response Time Confidence Interval (90%) vs Number of Users (M) [FIFO]')
 plt.minorticks_on()
 plt.grid(True, 'both')
 plt.savefig('graphs/resp_time_ci_fifo.png')
 # plt.show()
 
 # %%
+plt.clf()
 for i in range(min(15,len(numUsersFIFO))):
     plot_confidence_interval(numUsersFIFO[i], responseTimesFIFO[i], 1.96, 'tab:orange')
 
 plt.xlabel('Number of users')
 plt.ylabel('Response Time (s)')
-plt.title('Response Time Confidence Interval vs Number of Users (M) [FIFO]')
+plt.title('Response Time Confidence Interval (90%) vs Number of Users (M) [FIFO]')
 plt.minorticks_on()
 plt.grid(True, 'both')
 plt.savefig('graphs/resp_time_ci_fifo_zoomed.png')
 # plt.show()
 
 # %%
-
+print(f'Graphs generated under {GRAPHS_DIR} directory')
 
 
