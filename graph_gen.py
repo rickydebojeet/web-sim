@@ -75,7 +75,7 @@ plt.title('Goodput vs Number of Users (M)')
 plt.minorticks_on()
 plt.grid(True, 'both')
 plt.legend()
-plt.savefig('graphs/goodput.png')
+plt.savefig('graphs/goodput.png', bbox_inches='tight')
 # plt.show()
 
 # %%
@@ -88,7 +88,7 @@ plt.title('Badput vs Number of Users (M)')
 plt.minorticks_on()
 plt.grid(True, 'both')
 plt.legend()
-plt.savefig('graphs/badput.png')
+plt.savefig('graphs/badput.png', bbox_inches='tight')
 # plt.show()
 
 # %%
@@ -101,7 +101,7 @@ plt.title('Throughput (Λ) vs Number of Users (M)')
 plt.minorticks_on()
 plt.grid(True, 'both')
 plt.legend()
-plt.savefig('graphs/throughput.png')
+plt.savefig('graphs/throughput.png', bbox_inches='tight')
 # plt.show()
 
 # %%
@@ -115,7 +115,7 @@ plt.minorticks_on()
 plt.grid(True, 'both')
 plt.legend()
 # plt.show()
-plt.savefig('graphs/req_drop_rate.png')
+plt.savefig('graphs/req_drop_rate.png', bbox_inches='tight')
 
 # %%
 plt.clf()
@@ -127,7 +127,7 @@ plt.title('CPU Utilisation (ρ) vs Number of Users (M)')
 plt.minorticks_on()
 plt.grid(True, 'both')
 plt.legend()
-plt.savefig('graphs/utilisation.png')
+plt.savefig('graphs/utilisation.png', bbox_inches='tight')
 # plt.show()
 
 # %%
@@ -140,7 +140,7 @@ plt.title('Average Queue Length vs Number of Users (M)')
 plt.minorticks_on()
 plt.grid(True, 'both')
 plt.legend()
-plt.savefig('graphs/avg_queue_len.png')
+plt.savefig('graphs/avg_queue_len.png', bbox_inches='tight')
 # plt.show()
 
 # %%
@@ -153,7 +153,7 @@ plt.title('Average Waiting Time in Queue vs Number of Users (M)')
 plt.minorticks_on()
 plt.grid(True, 'both')
 plt.legend()
-plt.savefig('graphs/avg_queue_wait_time.png')
+plt.savefig('graphs/avg_queue_wait_time.png', bbox_inches='tight')
 # plt.show()
 
 # %%
@@ -180,7 +180,7 @@ plt.ylabel('Response Time (s)')
 plt.title('Response Time Confidence Interval (90%) vs Number of Users (M) [RoundRobin]')
 plt.minorticks_on()
 plt.grid(True, 'both')
-plt.savefig('graphs/resp_time_ci_rr.png')
+plt.savefig('graphs/resp_time_ci_rr.png', bbox_inches='tight')
 # plt.show()
 
 # %%
@@ -193,7 +193,7 @@ plt.ylabel('Response Time (s)')
 plt.title('Response Time Confidence Interval (90%) vs Number of Users (M) [RoundRobin]')
 plt.minorticks_on()
 plt.grid(True, 'both')
-plt.savefig('graphs/resp_time_ci_rr_zoomed.png')
+plt.savefig('graphs/resp_time_ci_rr_zoomed.png', bbox_inches='tight')
 # plt.show()
 
 # %%
@@ -206,7 +206,7 @@ plt.ylabel('Response Time (s)')
 plt.title('Response Time Confidence Interval (90%) vs Number of Users (M) [FIFO]')
 plt.minorticks_on()
 plt.grid(True, 'both')
-plt.savefig('graphs/resp_time_ci_fifo.png')
+plt.savefig('graphs/resp_time_ci_fifo.png', bbox_inches='tight')
 # plt.show()
 
 # %%
@@ -219,7 +219,20 @@ plt.ylabel('Response Time (s)')
 plt.title('Response Time Confidence Interval (90%) vs Number of Users (M) [FIFO]')
 plt.minorticks_on()
 plt.grid(True, 'both')
-plt.savefig('graphs/resp_time_ci_fifo_zoomed.png')
+plt.savefig('graphs/resp_time_ci_fifo_zoomed.png', bbox_inches='tight')
+# plt.show()
+
+# %%
+plt.clf()
+plt.plot(numUsersRR, list(map(avg, responseTimesRR)), label='Round Robin')
+plt.plot(numUsersRR, list(map(avg, responseTimesFIFO)), label='FIFO')
+plt.xlabel('Number of users')
+plt.ylabel('Response Time (s)')
+plt.title('Response Time (s) vs Number of Users (M)')
+plt.minorticks_on()
+plt.grid(True, 'both')
+plt.legend()
+plt.savefig('graphs/resp_time.png', bbox_inches='tight')
 # plt.show()
 
 # %%
