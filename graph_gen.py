@@ -249,9 +249,9 @@ mva_util = [0.119, 0.238, 0.356, 0.473, 0.589, 0.702, 0.81, 0.906, 0.972, 0.997,
 
 # %%
 plt.clf()
-plt.plot(numUsersRR, list(map(avg, responseTimesRR)), label='Simulator RR')
-plt.plot(numUsersFIFO, list(map(avg, responseTimesFIFO)), label='Simulator FIFO')
-plt.plot(exp_users,exp_resp_time, label='Experiment')
+plt.plot(numUsersRR, list(map(avg, responseTimesRR)), label='Simulation RR')
+plt.plot(numUsersFIFO, list(map(avg, responseTimesFIFO)), label='Simulation FIFO')
+plt.plot(exp_users,exp_resp_time, label='Measured')
 plt.plot(mva_users, mva_resp_time, label='MVA')
 plt.xlabel('Number of users')
 plt.ylabel('Response Time (s)')
@@ -264,9 +264,9 @@ plt.savefig('graphs/resp_time_sim_exp_mva.png')
 
 # %%
 plt.clf()
-plt.plot(numUsersRR, list(map(avg, coreUtilisationsRR)), label='Simulator RR')
-plt.plot(numUsersFIFO, list(map(avg, coreUtilisationsFIFO)), label='Simulator FIFO')
-plt.plot(exp_users, exp_util, label='Experiment')
+plt.plot(numUsersRR, list(map(avg, coreUtilisationsRR)), label='Simulation RR')
+plt.plot(numUsersFIFO, list(map(avg, coreUtilisationsFIFO)), label='Simulation FIFO')
+plt.plot(exp_users, exp_util, label='Measured')
 plt.plot(mva_users, mva_util, label='MVA')
 plt.xlabel('Number of users')
 plt.ylabel('Utilisation)')
@@ -279,9 +279,9 @@ plt.savefig('graphs/utilisation_sim_exp_mva.png')
 
 # %%
 plt.clf()
-plt.plot(numUsersRR, [ sum(x)  for x in zip( map(avg, goodPutsRR) , map(avg, badPutsRR)) ], label='Simulator RR')
-plt.plot(numUsersFIFO, [ sum(x)  for x in zip( map(avg, goodPutsFIFO) , map(avg, badPutsFIFO)) ], label='Simulator FIFO')
-plt.plot(exp_users, exp_throughputs, label='Experiment')
+plt.plot(numUsersRR, [ sum(x)  for x in zip( map(avg, goodPutsRR) , map(avg, badPutsRR)) ], label='Simulation RR')
+plt.plot(numUsersFIFO, [ sum(x)  for x in zip( map(avg, goodPutsFIFO) , map(avg, badPutsFIFO)) ], label='Simulation FIFO')
+plt.plot(exp_users, exp_throughputs, label='Measured')
 plt.plot(mva_users, mva_throughputs, label='MVA')
 plt.xlabel('Number of users')
 plt.ylabel('Throughput (req/s)')
