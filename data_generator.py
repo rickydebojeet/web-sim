@@ -3,7 +3,7 @@ from multiprocessing import Process
 import csv
 
 # NUM_USERS = [ 1, 2, 3, 4, 5, 10 ] + list(range(15, 301, 15)) + list(range(350, 600, 50))
-NUM_USERS = list(range(15, 241, 14))
+NUM_USERS = list(range(15, 241, 15))
 CLOCKS_PER_SEC = 1000000
 MAX_THREADS = 200
 NUM_CPUS = 1
