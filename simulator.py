@@ -5,6 +5,11 @@ class SchedulerType(Enum):
     ROUNDROBIN = 0
     FIFO = 1
 
+class ServiceTimeDist(Enum):
+    CONSTANT = 0
+    UNIFORM = 1
+    EXPONENTIAL = 2
+
 class simulator:
     
     def __init__(self, num_cpus: int, max_threads: int) -> None:
@@ -16,7 +21,7 @@ class simulator:
     
 
 
-    def run_simulation(self, num_users, think_time, avg_service_time, context_switch_time, avg_interarrival_time, timeout, simulation_time, ctxSwOverhead, maxQueueSize, retryProb, retryTime, schedulerType: SchedulerType,  rseed = 1, rstream = 0) -> None:
+    def run_simulation(self, num_users, think_time, avg_service_time, context_switch_time, avg_interarrival_time, timeout, simulation_time, ctxSwOverhead, maxQueueSize, retryProb, retryTime, schedulerType: SchedulerType, serviceTimeDist: ServiceTimeDist,  rseed = 1, rstream = 0) -> None:
         
         task_queue = TaskQueue(maxQueueSize)
         schedulers = SchedulerList()
@@ -31,7 +36,8 @@ class simulator:
         
         for i in range(num_users):
             # initilise users
-            t_user = User(i, think_time, avg_interarrival_time, avg_service_time, timeout, retryProb, retryTime, self.counters, randGen)
+            time_dist = DistType(serviceTimeDist.value)
+            t_user = User(i, think_time, avg_interarrival_time, avg_service_time, timeout, retryProb, retryTime, self.counters, randGen, time_dist)
             self.usersList.add_user(t_user)
         
         # initially add all arrival events
@@ -152,7 +158,7 @@ class simulator:
 def main():
     CLOCKS_PER_SEC = 1000000
     sim = simulator(2, 10)
-    sim.run_simulation(250, 10000000, 80000, 20000, 1000000, 2000000, 300000000, 1000, 200, 0.5, 5000, SchedulerType.ROUNDROBIN, 1973272912, 1)
+    sim.run_simulation(250, 10000000, 80000, 20000, 1000000, 2000000, 300000000, 1000, 200, 0.5, 5000, SchedulerType.ROUNDROBIN, ServiceTimeDist.EXPONENTIAL, 1973272912, 1)
     print(f'Response time: {sim.getAvgResponseTime() / CLOCKS_PER_SEC} s')
     print(f'Goodput: {sim.getGoodPut() * CLOCKS_PER_SEC} req/s')
     print(f'Badput: {sim.getBadPut() * CLOCKS_PER_SEC} req/s')

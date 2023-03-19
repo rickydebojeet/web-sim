@@ -11,6 +11,9 @@ def exponf(mean: float, generator: lcg) -> float:
 def expon(mean: int, generator: lcg) -> int:
     return round((-mean) * log(generator.lcgrand()))
 
+def uniform(mean: int, genetator: lcg) -> int:
+    return round(2 * mean * genetator.lcgrand())
+
 class ThreadState(Enum):
     CREATED = 1
     READY = 2
@@ -36,7 +39,10 @@ class EventType(IntEnum):
     EXECUTION = 2
     CTXSWITCH = 3
 
-
+class DistType(Enum):
+    CONSTANT = 0
+    UNIFORM = 1
+    EXPONENTIAL = 2
 
 @dataclass
 class Counters:
@@ -102,6 +108,7 @@ class User:
     retryTime: int
     counters: Counters
     randGen: lcg
+    serviceTimeDist: DistType
     task: Task = field(init=False)
     completedTasks: list[Task] = field(init=False, default_factory=list)
     userState: UserState = field(default=UserState.READY, init=False)
@@ -113,14 +120,14 @@ class User:
     def createTask(self, arrivalTime: int)->None:
         '''Creates a new task for the given arrival time'''
         # get service timeout from distribution
-        dist_service_time = expon(self.avgServiceTime, self.randGen)
+        service_time = self.avgServiceTime if self.serviceTimeDist == DistType.CONSTANT else uniform(self.avgServiceTime, self.randGen) if self.serviceTimeDist == DistType.UNIFORM else expon(self.avgServiceTime, self.randGen)
 
         # 50% of the timeout is minimum and rest is exponential
         min_timeout = self.timeoutDuration // 2
         var_timeout = expon(self.timeoutDuration - min_timeout, self.randGen)
         total_timeout = min_timeout + var_timeout
 
-        self.task = Task(self.counters.getTaskIdCounter(), self.userId, arrivalTime, dist_service_time, total_timeout, dist_service_time)
+        self.task = Task(self.counters.getTaskIdCounter(), self.userId, arrivalTime, service_time, total_timeout, service_time)
 
 
     def sendRequest(self) -> Task:

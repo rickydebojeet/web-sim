@@ -1,4 +1,4 @@
-from simulator import simulator, SchedulerType
+from simulator import simulator, SchedulerType, ServiceTimeDist
 from multiprocessing import Process
 import csv
 
@@ -16,6 +16,7 @@ CTX_SWITCH_OVERHEAD = 1000
 MAX_QUEUE_SIZE = 200
 RETRY_PROB = 0.5
 RETRY_DELAY = 5000
+SERVICE_TIME_DIST = ServiceTimeDist.EXPONENTIAL
 
 OUTPUT_DATA_FILE_RR = "sim_data_rr.csv"
 OUTPUT_DATA_FILE_FIFO = "sim_data_fifo.csv"
@@ -55,7 +56,8 @@ def print_run_config(f, scheduler: SchedulerType):
         'MAX_QUEUE_SIZE',  str(MAX_QUEUE_SIZE),
         'RETRY_PROB', str(RETRY_PROB),
         'RETRY_DELAY', str(RETRY_DELAY),
-        'SCHEDULER', scheduler.name
+        'SCHEDULER', scheduler.name,
+        'SERVICE_TIME_DIST', SERVICE_TIME_DIST.name
     ])
 
 def write_data_row(f, n_users, responseTimes, goodPuts, badPuts, requestDropRates, coreUtilsations, numRetriesPerTask, avgWaitingTimeInQueue):
@@ -80,7 +82,7 @@ def generate_data(output_file_name: str, schedulerType: SchedulerType):
         for i in range(NUM_RUNS):
             sim = simulator(NUM_CPUS, MAX_THREADS)
 
-            sim.run_simulation(n_user, THINK_TIME, AVG_SERVICE_TIME, QUANTA_BURST_TIME, AVG_INTERARRIVAL_TIME, TIMEOUT, SIMULATION_TIME, CTX_SWITCH_OVERHEAD, MAX_QUEUE_SIZE, RETRY_PROB, RETRY_DELAY, schedulerType, SEEDS[i], i)
+            sim.run_simulation(n_user, THINK_TIME, AVG_SERVICE_TIME, QUANTA_BURST_TIME, AVG_INTERARRIVAL_TIME, TIMEOUT, SIMULATION_TIME, CTX_SWITCH_OVERHEAD, MAX_QUEUE_SIZE, RETRY_PROB, RETRY_DELAY, schedulerType, SERVICE_TIME_DIST, SEEDS[i], i)
 
             responseTimes.append(sim.getAvgResponseTime() / CLOCKS_PER_SEC)
             goodPuts.append(sim.getGoodPut() * CLOCKS_PER_SEC)
