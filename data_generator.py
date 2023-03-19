@@ -2,21 +2,22 @@ from simulator import simulator, SchedulerType, ServiceTimeDist
 from multiprocessing import Process
 import csv
 
-NUM_USERS = [ 1, 2, 3, 4, 5, 10 ] + list(range(15, 301, 15)) + list(range(350, 600, 50))
+# NUM_USERS = [ 1, 2, 3, 4, 5, 10 ] + list(range(15, 301, 15)) + list(range(350, 600, 50))
+NUM_USERS = list(range(15, 241, 14))
 CLOCKS_PER_SEC = 1000000
-MAX_THREADS = 10
-NUM_CPUS = 2
+MAX_THREADS = 200
+NUM_CPUS = 1
 THINK_TIME = 10000000
 AVG_SERVICE_TIME = 80000
 QUANTA_BURST_TIME = 20000
-AVG_INTERARRIVAL_TIME = 1000000
+AVG_INTERARRIVAL_TIME = 100000
 TIMEOUT = 2000000
 SIMULATION_TIME = 300000000
 CTX_SWITCH_OVERHEAD = 1000
-MAX_QUEUE_SIZE = 200
+MAX_QUEUE_SIZE = 2000
 RETRY_PROB = 0.5
 RETRY_DELAY = 5000
-SERVICE_TIME_DIST = ServiceTimeDist.EXPONENTIAL
+SERVICE_TIME_DIST = ServiceTimeDist.CONSTANT
 
 OUTPUT_DATA_FILE_RR = "sim_data_rr.csv"
 OUTPUT_DATA_FILE_FIFO = "sim_data_fifo.csv"
