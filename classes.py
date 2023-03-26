@@ -379,7 +379,7 @@ class Scheduler(ABC):
         
 
         # add context switch overhead to the cpu time 
-        # if there are more than 1 task
+        # if there are more than 1 threads in the queue
         if len(self.execThreadQueue) > 1:
             self.cpu.currentCpuTime += self.contextSwitchOverhead
             # add to the cpu execution time
