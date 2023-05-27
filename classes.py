@@ -4,578 +4,744 @@ from math import log
 from lcgrand import *
 from abc import ABC, abstractmethod
 import heapq
+import csv
 
-def exponf(mean: float, generator: lcg) -> float:
-    return (-mean) * log(generator.lcgrand())
 
 def expon(mean: int, generator: lcg) -> int:
     return round((-mean) * log(generator.lcgrand()))
 
+
 def uniform(mean: int, genetator: lcg) -> int:
     return round(2 * mean * genetator.lcgrand())
 
-class ThreadState(Enum):
+
+class THREAD_STATE(Enum):
     CREATED = 1
     READY = 2
     RUNNING = 3
     DONE = 4
 
-class CPUState(Enum):
+
+class CPU_STATE(Enum):
     IDLE = 0
     BUSY = 1
 
-class UserState(Enum):
-    READY = 0
-    WAITING= 1
 
-class TaskCompletionState(Enum):
+class USER_STATE(Enum):
+    READY = 0
+    WAITING = 1
+
+
+class TASK_COMPLETION_STATE(Enum):
     SUCCESS = 0
     TIMEOUT = 1
     DROPPED = 2
 
-class EventType(IntEnum):
+
+class EVENT_TYPE(IntEnum):
     DEQUEUE = 0
-    ARRIVAL= 1
+    ARRIVAL = 1
     EXECUTION = 2
     CTXSWITCH = 3
 
-class DistType(Enum):
+
+class DIST_TYPE(Enum):
     CONSTANT = 0
     UNIFORM = 1
     EXPONENTIAL = 2
 
+
+class SCALLING_GOVERNORS(Enum):
+    PERFORMANCE = 0
+    POWERSAVE = 1
+    USERSPACE = 2
+    SCHEDUTIL = 3
+
+
 @dataclass
-class Counters:
+class counters:
     # Counter for thread ID
     TASKIDCOUNTER: int = field(default=0, init=False)
     THREADIDCOUNTER: int = field(default=0, init=False)
 
-    def getTaskIdCounter(self) -> int:
-        '''Returns and increments task id counter'''
+    def get_task_id_counter(self) -> int:
+        """Returns and increments task id counter"""
         tid = self.TASKIDCOUNTER
         self.TASKIDCOUNTER += 1
         return tid
 
-    def getThreadIdCounter(self) -> int:
-        '''Returns and increments thread id counter'''
+    def get_thread_id_counter(self) -> int:
+        """Returns and increments thread id counter"""
         tid = self.THREADIDCOUNTER
         self.THREADIDCOUNTER += 1
         return tid
-    
+
 
 # The task class represents an individual task
 @dataclass
-class Task:
+class task:
     # Attributes of the task class
-    taskId: int
-    userId: int
-    arrivalTime: int
-    burstTime: int
-    timeoutDuration: int
-    remainingTime: int
-    departureTime: int = field(init=False)
-    waitingTime: int = field(default=0, init=False)
-    waitingTimeForThread: int = field(default=0, init=False)
-    threadId: int = field(init=False)
-    cpuId: int = field(init=False)
-    numContextSwitches: int = field(default=0, init=False)
-    totalContextSwitchOverhead: int = field(default=0, init=False)
-    completionState: TaskCompletionState = field(init=False)
-    numRetries: int = field(init=False, default=0)
-    queueLengthObserved: int = field(init=False, default=0)
+    task_id: int
+    user_id: int
+    arrival_time: int
+    burst_cycles: int
+    timeout_duration: int
+    remaining_cycles: int
+    num_retries: int = field(default=0, init=False)
+    completion_state: TASK_COMPLETION_STATE = field(init=False)
+    departure_time: int = field(init=False)
+    queue_length_observed: int = field(init=False, default=0)
+    waiting_time: int = field(init=False, default=0)
+    burst_time: int = field(init=False, default=0)
+    num_context_switches: int = field(init=False, default=0)
+    total_context_switch_overhead: int = field(init=False, default=0)
+    thread_id: int = field(init=False)
+    cpu_id: int = field(init=False)
+    waiting_time_for_thread: int = field(default=0, init=False)
 
 
 # The CPU class represents a core
 @dataclass
-class CPU:
-    cpuId: int
-    cpuState: CPUState = field(default=CPUState.IDLE, init=False)
-    currentCpuTime: int = field(default= 0, init=False)
-    totalExecutionTime: int = field(default=0, init=False)
-
-
+class cpu:
+    cpu_id: int
+    cpu_max_freq: int
+    cpu_min_freq: int
+    cpu_transition_latency: int
+    cpu_cur_freq: int = field(init=False)
+    cpu_state: CPU_STATE = field(default=CPU_STATE.IDLE, init=False)
+    cpu_cur_time: int = field(default=0, init=False)
+    total_execution_time: int = field(default=0, init=False)
 
 
 # The user class
 @dataclass
-class User:
-    userId: int
-    thinkTime: int
-    avgInterarrivalTime: int
-    avgServiceTime: int
-    timeoutDuration: int
-    retryProb: float
-    retryTime: int
-    counters: Counters
-    randGen: lcg
-    serviceTimeDist: DistType
-    task: Task = field(init=False)
-    completedTasks: list[Task] = field(init=False, default_factory=list)
-    userState: UserState = field(default=UserState.READY, init=False)
+class user:
+    user_id: int
+    think_time: int
+    avg_interarrival_time: int
+    avg_service_time: int
+    avg_cpu_freq: int
+    timeout_duration: int
+    retry_prob: float
+    retry_time: int
+    count: counters
+    rand_gen: lcg
+    service_time_dist: DIST_TYPE
+    associated_task: task = field(init=False)
+    user_state: USER_STATE = field(default=USER_STATE.READY, init=False)
+    completed_tasks: list[task] = field(init=False, default_factory=list)
 
     def __post_init__(self):
-        '''Add initial task for the user'''
-        self.createTask(expon(self.avgInterarrivalTime, self.randGen))
+        """Add initial task for the user"""
+        self.create_task(expon(self.avg_interarrival_time, self.rand_gen))
 
-    def createTask(self, arrivalTime: int)->None:
-        '''Creates a new task for the given arrival time'''
-        # get service timeout from distribution
-        service_time = self.avgServiceTime if self.serviceTimeDist == DistType.CONSTANT else uniform(self.avgServiceTime, self.randGen) if self.serviceTimeDist == DistType.UNIFORM else expon(self.avgServiceTime, self.randGen)
+    def create_task(self, arrival_time: int) -> None:
+        """Creates a new task for the given arrival time"""
+        # get service time from distribution
+        service_time = (
+            self.avg_service_time
+            if self.service_time_dist == DIST_TYPE.CONSTANT
+            else uniform(self.avg_service_time, self.rand_gen)
+            if self.service_time_dist == DIST_TYPE.UNIFORM
+            else expon(self.avg_service_time, self.rand_gen)
+        )
 
         # 50% of the timeout is minimum and rest is exponential
-        min_timeout = self.timeoutDuration // 2
-        var_timeout = expon(self.timeoutDuration - min_timeout, self.randGen)
+        min_timeout = self.timeout_duration // 2
+        var_timeout = expon(self.timeout_duration - min_timeout, self.rand_gen)
         total_timeout = min_timeout + var_timeout
 
-        self.task = Task(self.counters.getTaskIdCounter(), self.userId, arrivalTime, service_time, total_timeout, service_time)
+        self.associated_task = task(
+            self.count.get_task_id_counter(),
+            self.user_id,
+            arrival_time,
+            int(service_time * self.avg_cpu_freq / 1000000),  # burst cycles
+            total_timeout,
+            int(service_time * self.avg_cpu_freq / 1000000),  # remaining cycles
+        )
 
-
-    def sendRequest(self) -> Task:
-        '''Sends the task to server'''
+    def send_request(self) -> task:
+        """Sends the task to server"""
         # set the user state to waiting
-        self.userState = UserState.WAITING
-        # print trace
-        print(f"|{'ARRIVAL':15s}|{self.task.arrivalTime:<10d}|{f'USERID {self.userId}':10s}|{f'TASKID {self.task.taskId}':10s}|{f'BURST {self.task.burstTime}':10s}|")
-        # return the task
-        return self.task
+        self.user_state = USER_STATE.WAITING
 
-    def droppedRequest(self) -> None: 
-        '''Method to handle request drops'''
-        # with probability p retry the request 
-        if self.randGen.lcgrand() <= self.retryProb:
+        # print trace
+        if __debug__:
+            print(
+                f"|{'ARRIVAL':15s}|{self.associated_task.arrival_time:<10d}|{f'USERID {self.user_id}':10s}|{f'TASKID {self.associated_task.task_id}':10s}|{f'BURST {self.associated_task.burst_time}':10s}|"
+            )
+        return self.associated_task
+
+    def dropped_request(self) -> None:
+        """Method to handle request drops"""
+        # with probability p retry the request
+        if self.rand_gen.lcgrand() <= self.retry_prob:
             # retry
-            self.task.arrivalTime += expon(self.retryTime, self.randGen)
-            self.task.numRetries += 1
+            self.associated_task.arrival_time += expon(self.retry_time, self.rand_gen)
+            self.associated_task.num_retries += 1
             # change the state of the user
-            self.userState = UserState.READY
-            print(f"|{'RETRY':15s}|{self.task.arrivalTime:<10d}|{f'USERID {self.userId}':10s}|{f'TASKID {self.task.taskId}':10s}|{f'RETRYN {self.task.numRetries}':10s}|")
+            self.user_state = USER_STATE.READY
+            if __debug__:
+                print(
+                    f"|{'RETRY':15s}|{self.associated_task.arrival_time:<10d}|{f'USERID {self.user_id}':10s}|{f'TASKID {self.associated_task.task_id}':10s}|{f'RETRYN {self.associated_task.num_retries}':10s}|"
+                )
         else:
-            print(f"|{'DROPPED':15s}|{self.task.arrivalTime:<10d}|{f'USERID {self.userId}':10s}|{f'TASKID {self.task.taskId}':10s}|{f'RETRYN {self.task.numRetries}':10s}|")
+            if __debug__:
+                print(
+                    f"|{'DROPPED':15s}|{self.associated_task.arrival_time:<10d}|{f'USERID {self.user_id}':10s}|{f'TASKID {self.associated_task.task_id}':10s}|{f'RETRYN {self.associated_task.num_retries}':10s}|"
+                )
+
             # mark the request as dropped
-            self.task.completionState = TaskCompletionState.DROPPED
-            self.task.departureTime = self.task.arrivalTime
-            self.completedTasks.append(self.task)
+            self.associated_task.completion_state = TASK_COMPLETION_STATE.DROPPED
+            self.associated_task.departure_time = self.associated_task.arrival_time
+            self.completed_tasks.append(self.associated_task)
 
             # generate a new request
-            self.createTask(self.completedTasks[-1].departureTime + self.thinkTime)
-            # change userstate
-            self.userState = UserState.READY
+            self.create_task(self.completed_tasks[-1].departure_time + self.think_time)
+            self.user_state = USER_STATE.READY
 
-
-    def requestCompleted(self):
-        
-        print(f"|{self.task.completionState.name:15s}|{self.task.departureTime:<10d}|{f'USERID {self.userId}':10s}|{f'TASKID {self.task.taskId}':10s}|")
+    def request_completed(self) -> None:
+        if __debug__:
+            print(
+                f"|{self.associated_task.completion_state.name:15s}|{self.associated_task.departure_time:<10d}|{f'USERID {self.user_id}':10s}|{f'TASKID {self.associated_task.task_id}':10s}|{f'BURST {self.associated_task.burst_time}':10s}|"
+            )
 
         # add current task to completed tasks list
-        self.completedTasks.append(self.task)
-        
+        self.completed_tasks.append(self.associated_task)
+
         # think time is combination of min fixed + variable time
-        think_time = round(0.8 * self.thinkTime) + expon(round(0.2 * self.thinkTime), self.randGen)
+        think_time = round(0.8 * self.think_time) + expon(
+            0.2 * self.think_time, self.rand_gen
+        )
 
         # create a new task
-        self.createTask(self.completedTasks[-1].departureTime + think_time)
+        self.create_task(self.completed_tasks[-1].departure_time + think_time)
 
-        # set userState to ready
-        self.userState = UserState.READY
+        # set user state to ready
+        self.user_state = USER_STATE.READY
 
 
 # Class to manage list of users
 @dataclass
-class UserList:
-    users: dict[int,User] = field(default_factory=dict)
+class user_list:
+    users: dict[int, user] = field(default_factory=dict)
 
-    def add_user(self, user: User) -> None:
-        '''Adds a new user to the list'''
-        self.users[user.userId] = user
-    
-    def get_user(self, userId: int) -> User:
-        '''Returns the user with the specified
-           user id'''
-        return self.users[userId]
-    
-    def get_next_sender(self) -> User:
-        '''Get the next user who is ready to send the request
-        return None if all users are waiting'''
-        readyUsers = self.get_all_ready_users()
+    def add_user(self, user: user) -> None:
+        """Adds a new user to the list"""
+        self.users[user.user_id] = user
 
-        if len(readyUsers) == 0:
-            return None
+    def get_all_ready_users(self) -> list[user]:
+        """Returns the list of all ready users"""
+        return [x for x in self.users.values() if x.user_state == USER_STATE.READY]
 
-        next_user = min(readyUsers, key=lambda x: x.task.arrivalTime)
-        return next_user
+    def get_user(self, user_id: int) -> user:
+        """Returns the user with the given user id"""
+        return self.users[user_id]
 
-    def get_all_ready_users(self) -> list[User]:
-        '''Returns the list of all ready users'''
-        return [ x for x in self.users.values() if x.userState == UserState.READY]
-
-    def get_all_users(self) -> list[User]:
-        '''Return list of all users'''
+    def get_all_users(self) -> list[user]:
+        """Returns the list of all users"""
         return self.users.values()
 
 
-# The thread class represent a thread. 
+# The thread class represent a thread.
 # Each thread is assigned a task
 @dataclass
-class Thread:
-    threadId: int
-    cpuId: int
-    task: Task
-    threadState: ThreadState = field(default=ThreadState.CREATED, init=False)
+class thread:
+    thread_id: int
+    cpu_id: int
+    associated_task: task
+    thread_state: THREAD_STATE = field(default=THREAD_STATE.CREATED, init=False)
 
-    def threadCompleted(self, currentCpuTime: int, usersList: UserList) -> int:
-        '''Thread has completed execution
-           Returns the associated user id'''
+    def thread_completed(
+        self,
+        current_cpu_time: int,
+        users: user_list,
+    ) -> int:
+        """Thread has completed execution
+        Returns the associated user id"""
         # Mark thread state as done
-        self.threadState = ThreadState.DONE
+        self.thread_state = THREAD_STATE.DONE
         # update task departure time
-        self.task.departureTime = currentCpuTime
+        self.associated_task.departure_time = current_cpu_time
         # update total waiting time
-        self.task.waitingTime = self.task.departureTime - self.task.arrivalTime - self.task.burstTime
-        # turn around time
-        tat = self.task.departureTime - self.task.arrivalTime
+        self.associated_task.waiting_time = (
+            self.associated_task.departure_time
+            - self.associated_task.arrival_time
+            - self.associated_task.burst_time
+        )
+        # update the turn aroung time
+        tat = self.associated_task.departure_time - self.associated_task.arrival_time
 
-        self.task.completionState = TaskCompletionState.SUCCESS if self.task.timeoutDuration >= tat else TaskCompletionState.TIMEOUT
+        self.associated_task.completion_state = (
+            TASK_COMPLETION_STATE.SUCCESS
+            if self.associated_task.timeout_duration >= tat
+            else TASK_COMPLETION_STATE.TIMEOUT
+        )
 
         # update the user
-        usersList.get_user(self.task.userId).requestCompleted()
-        return self.task.userId
+        users.get_user(self.associated_task.user_id).request_completed()
+        return self.associated_task.user_id
 
 
 @dataclass
-class Scheduler(ABC):
-    contextSwitchOverhead: int
-    cpu: CPU
-    maxThreadQueueSize: int
-    usersList: UserList
-    counters: Counters
-    execThreadQueue: list[Thread] = field(default_factory=list, init=False)
-    executingThreadIdx: int = field(default=-1, init=False)
-    currentTimeQuanta: int = field(default=0, init=False)
+class scheduler(ABC):
+    context_switch_overhead: int
+    associated_cpu: cpu
+    max_thread_queue_size: int
+    users_list: user_list
+    counters: counters
+    scalling_governor: SCALLING_GOVERNORS
+    exec_thread_queue: list[thread] = field(default_factory=list, init=False)
+    cur_time_quanta: int = field(default=0, init=False)
+    executing_thread_idx: int = field(default=-1, init=False)
+    last_execution_time: int = field(default=0, init=False)
+    last_context_switch_time: int = field(default=0, init=False)
 
-    def isThreadQueueFull(self)->bool:
-        '''Returns true if thread queue is full'''
-        return len(self.execThreadQueue) == self.maxThreadQueueSize
-    
-    @abstractmethod
-    def getNextTimeQuanta(self, t_task: Task) -> int:
-        '''Returns time quanta'''
-        pass
+    def is_thread_queue_full(self) -> bool:
+        """Returns true if thread queue is full"""
+        return len(self.exec_thread_queue) == self.max_thread_queue_size
 
-    def addThread(self, thread: Thread) -> bool:
-        '''Adds a new thread to the thread queue
-        returns true if cpu was idle before'''
-        assert len(self.execThreadQueue) < self.maxThreadQueueSize
-
-        # add thread in the last
-        self.execThreadQueue.append(thread)
-
-        cpuIdle = False
-
-        # if this is the first thread
-        if len(self.execThreadQueue) == 1:
-            assert self.cpu.cpuState == CPUState.IDLE
-            cpuIdle = True
-            # update current time quanta
-            self.currentTimeQuanta = self.getNextTimeQuanta(thread.task)
-            self.executingThreadIdx = 0
-            # set cpu to BUSY
-            self.cpu.cpuState = CPUState.BUSY
-            # set the cpu time to the arrival time
-            self.cpu.currentCpuTime = max(thread.task.arrivalTime, self.cpu.currentCpuTime)
-        
-        # update waiting in thread time
-        thread.task.waitingTimeForThread = self.cpu.currentCpuTime - thread.task.arrivalTime
-        # update thread state to ready
-        thread.threadState = ThreadState.READY
-        return cpuIdle
-
-    def addTaskAndCreateThread(self, t_task: Task) -> bool:
-        '''Adds a task and creates thread
-        returns true if cpu was idle before'''
-        # create a thread and assign it to the cpu
-        thread = Thread(self.counters.getThreadIdCounter(), self.cpu.cpuId, t_task)
-        t_task.threadId = thread.threadId
-        t_task.cpuId = self.cpu.cpuId
-
-        # add it to the scheduler 
-        cpuIdle = self.addThread(thread)
-
-        print(f"|{'THREADCREATE':15s}|{self.cpu.currentCpuTime:<10d}|{f'CPUID {self.cpu.cpuId}':10s}|{f'TID {thread.threadId}':10s}|{f'TASKID {t_task.taskId}':10s}")
-
-        return cpuIdle
-    
-
-    def getNextContextSwitchTime(self) -> int:
-        '''Returns the context switch time of next task'''
-        if self.cpu.cpuState == CPUState.IDLE:
+    def get_next_context_switch_time(self) -> int:
+        """Returns the context switch time of next task"""
+        if self.associated_cpu.cpu_state == CPU_STATE.IDLE:
             return -1
-        return self.cpu.currentCpuTime + self.currentTimeQuanta
+        return self.associated_cpu.cpu_cur_time + int(
+            self.cur_time_quanta / self.associated_cpu.cpu_cur_freq * 1000000
+        )
 
-    def executeCurrentThread(self):
-        '''Executes the current thread'''
-        if self.executingThreadIdx != -1:
-            # Set thread state to runnning
-            self.execThreadQueue[self.executingThreadIdx].threadState = ThreadState.RUNNING
+    def execute_current_thread(self):
+        """Executes the current thread"""
+        if self.executing_thread_idx != -1:
+            # set thread state to running
+            self.exec_thread_queue[
+                self.executing_thread_idx
+            ].thread_state = THREAD_STATE.RUNNING
             # update cpu stats
-            print(f"|{'EXECUTE':15s}|{self.cpu.currentCpuTime:<10d}|{f'CPUID {self.cpu.cpuId}':10s}|{f'TID {self.execThreadQueue[self.executingThreadIdx].threadId}':10s}|{f'FOR {self.currentTimeQuanta}':10s}|")
-            self.cpu.currentCpuTime += self.currentTimeQuanta
-            self.cpu.totalExecutionTime += self.currentTimeQuanta
-            # update task remaining time
-            self.execThreadQueue[self.executingThreadIdx].task.remainingTime -= self.currentTimeQuanta
+            if __debug__:
+                print(
+                    f'|{"EXECUTE":15s}|{self.associated_cpu.cpu_cur_time:<10d}|{f"CPUID {self.associated_cpu.cpu_id}":10s}|{f"TID {self.exec_thread_queue[self.executing_thread_idx].thread_id}":10s}|{f"FOR {self.cur_time_quanta}":10s}|'
+                )
+            self.associated_cpu.cpu_cur_time += int(
+                self.cur_time_quanta / self.associated_cpu.cpu_cur_freq * 1000000
+            )
+            self.associated_cpu.total_execution_time += (
+                self.cur_time_quanta / self.associated_cpu.cpu_cur_freq * 1000000
+            )
+            # update task remaining time and add burst time
+            self.exec_thread_queue[
+                self.executing_thread_idx
+            ].associated_task.remaining_cycles -= self.cur_time_quanta
+            self.exec_thread_queue[
+                self.executing_thread_idx
+            ].associated_task.burst_time += (
+                self.cur_time_quanta / self.associated_cpu.cpu_cur_freq * 1000000
+            )
 
-        
-    def contextSwitch(self) -> User:
-        '''Gets the next task to schedule
-            Returns user if its task is completed'''
-        nextIdx = -1
-        completedUser = None
-        print(f"|{'CTXSWITCH':15s}|{self.cpu.currentCpuTime:<10d}|{f'CPUID {self.cpu.cpuId}':10s}|{f'TID {self.execThreadQueue[self.executingThreadIdx].threadId}':10s}|{f'TASKID {self.execThreadQueue[self.executingThreadIdx].task.taskId}':10s}|")
+    def context_switch(self) -> user:
+        """Gets the next task to schedule
+        Returns user if its task is completed"""
+        next_idx = -1
+        completed_user = None
+        if __debug__:
+            print(
+                f'|{"CTXSWITCH":15s}|{self.associated_cpu.cpu_cur_time:<10d}|{f"CPUID {self.associated_cpu.cpu_id}":10s}|{f"TID {self.exec_thread_queue[self.executing_thread_idx].thread_id}":10s}|{f"TASKID {self.exec_thread_queue[self.executing_thread_idx].associated_task.task_id}":10s}|'
+            )
 
         # if the current thread has completed its execution
         # then mark it as completed and remove from queue
-        if self.execThreadQueue[self.executingThreadIdx].task.remainingTime <= 0:
-            
-            # check if task completed
-            if self.execThreadQueue[self.executingThreadIdx].task.remainingTime <= 0:
-                # call compeletion handler
-                uId = self.execThreadQueue[self.executingThreadIdx].threadCompleted(self.cpu.currentCpuTime, self.usersList)
-                completedUser = self.usersList.get_user(uId)
+        if (
+            self.exec_thread_queue[
+                self.executing_thread_idx
+            ].associated_task.remaining_cycles
+            <= 0
+        ):
+            # call compeletion handler
+            uid = self.exec_thread_queue[self.executing_thread_idx].thread_completed(
+                self.associated_cpu.cpu_cur_time, self.users_list
+            )
+            completed_user = self.users_list.get_user(uid)
 
             # remove thread from queue
-            del self.execThreadQueue[self.executingThreadIdx]
+            del self.exec_thread_queue[self.executing_thread_idx]
 
-            # since item is deleted, the current index points 
+            # since item is deleted, the current index points
             # to the next Thread
-            nextIdx = self.executingThreadIdx % len(self.execThreadQueue) if len(self.execThreadQueue) != 0 else -1
+            next_idx = (
+                self.executing_thread_idx % len(self.exec_thread_queue)
+                if len(self.exec_thread_queue) != 0
+                else -1
+            )
 
-        elif len(self.execThreadQueue) == 1:
-            # if there is only one task
-            # then execute the same task without 
-            # context switch overhead
-            nextIdx = self.executingThreadIdx
-
+        elif len(self.exec_thread_queue) == 1:
+            # if there is only one task then execute the same task without context switch overhead
+            next_idx = self.executing_thread_idx
         else:
-            # this task is context switching out
-            # increase number of context switches
-            self.execThreadQueue[self.executingThreadIdx].task.numContextSwitches += 1
+            # this task is context switching out increases number of context switches
+            self.exec_thread_queue[
+                self.executing_thread_idx
+            ].associated_task.num_context_switches += 1
 
-            # context Switch Overhead
-            self.execThreadQueue[self.executingThreadIdx].task.totalContextSwitchOverhead += self.contextSwitchOverhead
-            
-            # Set thread state to ready
-            self.execThreadQueue[self.executingThreadIdx].threadState = ThreadState.READY
+            # update context switch overhead
+            self.exec_thread_queue[
+                self.executing_thread_idx
+            ].associated_task.total_context_switch_overhead += (
+                self.context_switch_overhead
+                / self.associated_cpu.cpu_cur_freq
+                * 1000000
+            )
+
+            # set thread state to ready
+            self.exec_thread_queue[
+                self.executing_thread_idx
+            ].thread_state = THREAD_STATE.READY
 
             # increment index
-            nextIdx = (self.executingThreadIdx + 1) % len(self.execThreadQueue)
-
+            next_idx = (self.executing_thread_idx + 1) % len(self.exec_thread_queue)
 
         # if thread queue is empty then return -1
-        if len(self.execThreadQueue) == 0:
+        if len(self.exec_thread_queue) == 0:
             # set cpu to idle
-            self.cpu.cpuState = CPUState.IDLE
-            self.currentTimeQuanta = 0
-            self.executingThreadIdx = -1
-            return completedUser
-        
+            self.associated_cpu.cpu_state = CPU_STATE.IDLE
+            self.cur_time_quanta = 0
+            self.executing_thread_idx = -1
+            return completed_user
 
-        # add context switch overhead to the cpu time 
+        # add context switch overhead to the cpu time
         # if there are more than 1 threads in the queue
-        if len(self.execThreadQueue) > 1:
-            self.cpu.currentCpuTime += self.contextSwitchOverhead
+        if len(self.exec_thread_queue) > 1:
+            self.associated_cpu.cpu_cur_time += int(
+                self.context_switch_overhead
+                / self.associated_cpu.cpu_cur_freq
+                * 1000000
+            )
             # add to the cpu execution time
-            self.cpu.totalExecutionTime += self.contextSwitchOverhead
+            self.associated_cpu.total_execution_time += (
+                self.context_switch_overhead
+                / self.associated_cpu.cpu_cur_freq
+                * 1000000
+            )
 
         # set the next time_quanta
-        self.currentTimeQuanta = self.getNextTimeQuanta(self.execThreadQueue[nextIdx].task)
+        self.cur_time_quanta = self.get_next_time_quanta(
+            self.exec_thread_queue[next_idx].associated_task
+        )
 
         # set the index of next scheduled thread
-        self.executingThreadIdx = nextIdx
-        
+        self.executing_thread_idx = next_idx
+
         # return completed user
-        return completedUser
+        return completed_user
+
+    @abstractmethod
+    def get_next_time_quanta(self, t_task: task) -> int:
+        """Returns time quanta"""
+        pass
+
+    def add_task_and_create_thread(self, t_task: task) -> bool:
+        """Adds a task and creates thread
+        returns true if cpu was idle before"""
+        # create a thread and assign it to the cpu
+        t_thread = thread(
+            self.counters.get_thread_id_counter(), self.associated_cpu.cpu_id, t_task
+        )
+        t_task.thread_id = t_thread.thread_id
+        t_task.cpu_id = self.associated_cpu.cpu_id
+
+        # add it to the scheduler
+        cpu_idle = self.add_thread(t_thread)
+
+        if __debug__:
+            print(
+                f'|{"THREADCREATE":15s}|{self.associated_cpu.cpu_cur_time:<10d}|{f"CPUID {self.associated_cpu.cpu_id}":10s}|{f"TID {t_thread.thread_id}":10s}|{f"TASKID {t_task.task_id}":10s}|'
+            )
+
+        return cpu_idle
+
+    def add_thread(self, t_thread: thread) -> bool:
+        """Adds a thread to the thread queue
+        returns true if cpu was idle before"""
+        assert len(self.exec_thread_queue) < self.max_thread_queue_size
+
+        # add thread in the last
+        self.exec_thread_queue.append(t_thread)
+
+        cpu_idle = False
+
+        # if this is the first thread
+        if len(self.exec_thread_queue) == 1:
+            assert self.associated_cpu.cpu_state == CPU_STATE.IDLE
+            cpu_idle = True
+            # update current time quanta
+            self.cur_time_quanta = self.get_next_time_quanta(t_thread.associated_task)
+            self.executing_thread_idx = 0
+            # set cpu to busy
+            self.associated_cpu.cpu_state = CPU_STATE.BUSY
+            # set the cpu time to the arrival time
+            self.associated_cpu.cpu_cur_time = max(
+                t_thread.associated_task.arrival_time, self.associated_cpu.cpu_cur_time
+            )
+
+        # update waiting in thread time
+        t_thread.associated_task.waiting_time_for_thread = (
+            self.associated_cpu.cpu_cur_time - t_thread.associated_task.arrival_time
+        )
+
+        # update thread state to ready
+        thread.thread_state = THREAD_STATE.READY
+        return cpu_idle
 
 
 @dataclass
-class RoundRobinScheduler(Scheduler):
-    maxTimeQuanta: int
+class round_robin_scheduler(scheduler):
+    max_time_quanta: int
 
-    def getNextTimeQuanta(self, t_task: Task) -> int:
-        '''Returns time quanta'''
-        return min(t_task.remainingTime, self.maxTimeQuanta)
+    def get_next_time_quanta(self, t_task: task) -> int:
+        return min(t_task.remaining_cycles, self.max_time_quanta)
+
 
 @dataclass
-class FIFOScheduler(Scheduler):
+class fifo_scheduler(scheduler):
+    def get_next_time_quanta(self, t_task: task) -> int:
+        """returns time quanta"""
+        return t_task.remaining_cycles
 
-    def getNextTimeQuanta(self, t_task: Task) -> int:
-        '''Returns time quanta'''
-        return t_task.remainingTime
 
 # class to represent a list of schedulers
 @dataclass
-class SchedulerList:
-    schedulers: list[Scheduler] = field(init=False, default_factory=list)
-    countsTaskAdded: dict[int,int] = field(init=False, default_factory=dict)
+class scheduler_list:
+    schedulers: list[scheduler] = field(init=False, default_factory=list)
+    counts_task_added: dict[int, int] = field(init=False, default_factory=dict)
 
-    def add(self,sch: Scheduler)-> None:
-        '''Adds a scheduler to the list'''
+    def add(self, sch: scheduler) -> None:
+        """Adds a scheduler to the list"""
         self.schedulers.append(sch)
-        self.countsTaskAdded[sch.cpu.cpuId] = 0
-    
-    def __getitem__(self, key):
-        return self.schedulers[key]
+        self.counts_task_added[sch.associated_cpu.cpu_id] = 0
 
-    def getAScheduler(self)->Scheduler:
-        '''Returns a scheduler with cpu that fewest threads
-        returns None if all scheduler is fully occupied'''
+    def get_a_scheduler(self) -> scheduler:
+        """Returns a scheduler with cpu that has fewest threads
+        returns None if all scheduler is fully occupied"""
 
-        minQSched = min(self.schedulers, key=lambda x: len(x.execThreadQueue))
+        min_q_sched = min(self.schedulers, key=lambda x: len(x.exec_thread_queue))
 
-        if minQSched.isThreadQueueFull():
+        if min_q_sched.is_thread_queue_full():
             return None
 
         # if more than 1 schedulers have min thread queue count,
-        # then return the one which has least countsTaskAdded value
+        # then return the one which has least counts_task_added value
 
-        tScheds = [ x for x in  self.schedulers if len(x.execThreadQueue) == len(minQSched.execThreadQueue) ]
-        
-        targetSched = minQSched
+        t_scheds = [
+            x
+            for x in self.schedulers
+            if len(x.exec_thread_queue) == len(min_q_sched.exec_thread_queue)
+        ]
 
-        if len(tScheds) > 1:
-            targetSched = min(tScheds, key=lambda x: self.countsTaskAdded[x.cpu.cpuId])
-            
+        target_sched = min_q_sched
+
+        if len(t_scheds) > 1:
+            target_sched = min(
+                t_scheds, key=lambda x: self.counts_task_added[x.associated_cpu.cpu_id]
+            )
+
         # increase count
-        self.countsTaskAdded[targetSched.cpu.cpuId] += 1
-        return targetSched
-    
-    def nextEvent(self)->Scheduler:
-        '''Returns the time of next event and associated scheduler
-        None if there is no event'''
-        
-        busyCpus = list(filter(lambda x: x.cpu.cpuState == CPUState.BUSY, self.schedulers))
-
-        if len(busyCpus) == 0:
-            return None
-
-        schd = min(busyCpus, key=lambda x: x.getNextContextSwitchTime())
-        return schd
+        self.counts_task_added[target_sched.associated_cpu.cpu_id] += 1
+        return target_sched
 
 
 @dataclass
-class TaskQueue:
-    maxQueueLength: int
-    queue: list[Task] = field(init=False, default_factory=list)
+class task_queue:
+    max_queue_length: int
+    queue: list[task] = field(init=False, default_factory=list)
 
-    def enqueue(self, t_task: Task) -> None:
-        "Adds a task to the queue"
-        # add only if the queue length is less than the max length
-        assert len(self.queue) < self.maxQueueLength
-        self.queue.insert(0, t_task)
-    
-    def dequeue(self) -> Task:
-        '''Pops and returns task in FIFO order'''
-        assert len(self.queue) != 0
-        return self.queue.pop()
-    
-    def peek(self) -> Task:
-        '''Returns the top task without poppping'''
-        return self.queue[-1]
+    def is_full(self) -> bool:
+        """Returns if the task queue is full"""
+        return self.length() == self.max_queue_length
 
     def length(self) -> int:
-        '''Retutns length of the queue'''
+        """Returns the length of the task queue"""
         return len(self.queue)
-    
-    def isFull(self) -> bool:
-        '''Returns if the task queue is full'''
-        return self.length() == self.maxQueueLength
+
+    def enqueue(self, t_task: task) -> None:
+        """Adds a task to the queue"""
+        assert len(self.queue) < self.max_queue_length
+        self.queue.insert(0, t_task)
+
+    def peek(self) -> task:
+        """Return the top task without popping"""
+        return self.queue[-1]
+
+    def dequeue(self) -> task:
+        """Pops and returns task in FIFO order"""
+        assert len(self.queue) != 0
+        return self.queue.pop()
+
 
 @dataclass(order=True)
-class Event:
+class event:
     # class to represent event details
-    eventTime: int
-    eventType: EventType
-    associatedObject: object = field(compare=False)
+    event_time: int
+    event_type: EVENT_TYPE
+    associated_object: object = field(compare=False)
 
     def __eq__(self, __o: object) -> bool:
-        '''all fields are equal'''
-        return self.eventTime == __o.eventTime and self.eventType == __o.eventType and id(self.associatedObject) == id(__o.associatedObject)
+        """all fields are equal"""
+        return (
+            self.event_time == __o.event_time
+            and self.event_type == __o.event_type
+            and id(self.associated_object) == id(__o.associated_object)
+        )
+
 
 @dataclass
-class EventList:
-    events: list[Event] = field(init=False, default_factory=list)
+class event_list:
+    events: list[event] = field(init=False, default_factory=list)
 
-    def addEvent(self, event: Event) -> None:
-        '''Adds a new event to the pq'''
+    def add_event(self, event: event) -> None:
+        """Adds a new event to the pq"""
         ## if same event is not already in the heap then add
         if event not in self.events:
             heapq.heappush(self.events, event)
-    
-    def getNextEvent(self) -> Event:
-        '''returns the top event'''
+
+    def get_next_event(self) -> event:
+        """returns the top event"""
         return heapq.heappop(self.events)
-    
 
-class EventHandlers:
 
+class event_handlers:
     @staticmethod
-    def arrivalEventHandler(eventTime: int, t_user: User, schedulers: SchedulerList, taskQueue: TaskQueue, eventsList: EventList) -> None:
+    def arrival_event_handler(
+        event_time: int,
+        t_user: user,
+        schedulers: scheduler_list,
+        queue_of_task: task_queue,
+        events: event_list,
+    ) -> None:
         # apply arrival logic
+        t_task = t_user.send_request()
+
         # check if queue is full
-        t_task = t_user.sendRequest()
-
-        if taskQueue.isFull():
+        if queue_of_task.is_full():
             # then drop the request
-            t_user.droppedRequest()
+            t_user.dropped_request()
         else:
-            print(f"|{'ENQUEUE':15s}|{eventTime:<10d}|{f'USERID {t_user.userId}':10s}|{f'TASKID {t_task.taskId}':10s}|{f'QLEN {taskQueue.length()}':10s}")
+            if __debug__:
+                print(
+                    f"|{'ENQUEUE':15s}|{event_time:<10}|{f'USERID {t_user.user_id}':10s}|{f'TASKID {t_task.task_id}':10s}|{f'QLEN {queue_of_task.length()}':10s}"
+                )
             # record the queue length
-            t_task.queueLengthObserved = taskQueue.length()
+            t_task.queue_length_observed = queue_of_task.length()
             # add task to the queue
-            taskQueue.enqueue(t_user.task)
-            # TODO: to record the queue length?
-        
+            queue_of_task.enqueue(t_user.associated_task)
             # check if any cpu is free
-            # get a free cpu 
-            freeSched = schedulers.getAScheduler()
-            if freeSched != None:
+            # get a free cpu
+            free_sched = schedulers.get_a_scheduler()
+            # TODO: check if this is working correctly
+            if free_sched != None:
                 # create a deque event at the next context switch time
-                eventsList.addEvent(Event(max(eventTime, freeSched.getNextContextSwitchTime()), EventType.DEQUEUE, freeSched))
+                events.add_event(
+                    event(
+                        max(event_time, free_sched.get_next_context_switch_time()),
+                        EVENT_TYPE.DEQUEUE,
+                        free_sched,
+                    )
+                )
 
     @staticmethod
-    def executionEventHandler(eventTime: int, sched: Scheduler, eventsList: EventList) -> None:
-        sched.executeCurrentThread()
-        # Add context switch event to the events list
-        eventsList.addEvent(Event(sched.cpu.currentCpuTime, EventType.CTXSWITCH, sched))
+    def execution_event_handler(
+        event_time: int, sched: scheduler, events: event_list
+    ) -> None:
+        # apply execution logic
+        sched.execute_current_thread()
+        # add context switch event to the events list
+        events.add_event(
+            event(sched.associated_cpu.cpu_cur_time, EVENT_TYPE.CTXSWITCH, sched)
+        )
 
     @staticmethod
-    def contextSwitchEventHandler(eventTime: int, sched: Scheduler, taskQueue: TaskQueue, schedulers: SchedulerList, usersList: UserList, eventsList: EventList) -> None:
-        completedUser = sched.contextSwitch()
+    def context_swtich_event_handler(
+        event_time: int,
+        sched: scheduler,
+        queue_of_task: task_queue,
+        schedulers: scheduler_list,
+        list_of_users: user_list,
+        events: event_list,
+    ) -> None:
+        if (sched.associated_cpu.cpu_cur_time - sched.last_context_switch_time) > (
+            1000
+            * sched.associated_cpu.cpu_transition_latency
+            / sched.associated_cpu.cpu_cur_freq
+            * 1000000
+        ):
+            utilization = (
+                sched.associated_cpu.total_execution_time - sched.last_execution_time
+            ) / (sched.associated_cpu.cpu_cur_time - sched.last_context_switch_time)
 
-        # add the next Execution event 
-        if sched.cpu.cpuState != CPUState.IDLE:
-            eventsList.addEvent(Event(sched.cpu.currentCpuTime, EventType.EXECUTION, sched))
+            if sched.scalling_governor == SCALLING_GOVERNORS.SCHEDUTIL:
+                # update the cpu frequency
+                sched.associated_cpu.cpu_cur_freq = max(
+                    sched.associated_cpu.cpu_min_freq,
+                    min(
+                        sched.associated_cpu.cpu_max_freq,
+                        (1.25 * utilization * sched.associated_cpu.cpu_max_freq),
+                    ),
+                )
+                sched.associated_cpu.cpu_cur_time += int(
+                    sched.associated_cpu.cpu_transition_latency
+                    / sched.associated_cpu.cpu_cur_freq
+                    * 1000000
+                )
 
-        # check is task_queue is not empty
-        if taskQueue.length() != 0 and not sched.isThreadQueueFull():
-            # check if current cpu is free
+                sched.last_execution_time = sched.associated_cpu.total_execution_time
+                sched.last_context_switch_time = sched.associated_cpu.cpu_cur_time
+
+        completed_user = sched.context_switch()
+
+        # add the next execution event
+        if sched.associated_cpu.cpu_state != CPU_STATE.IDLE:
+            events.add_event(
+                event(sched.associated_cpu.cpu_cur_time, EVENT_TYPE.EXECUTION, sched)
+            )
+
+        # check if task queue is not empty
+        if queue_of_task.length() != 0 and not sched.is_thread_queue_full():
+            # check if cpu is free
             # add dequeue event to the list
-            eventsList.addEvent(Event(max(taskQueue.peek().arrivalTime,sched.cpu.currentCpuTime), EventType.DEQUEUE, sched))
-        
-        # if a user is completed, then add next arrival event
-        if completedUser != None:
-            eventsList.addEvent(Event(completedUser.task.arrivalTime, EventType.ARRIVAL, completedUser))
-        
-        
-    
+            events.add_event(
+                event(
+                    max(
+                        queue_of_task.peek().arrival_time,
+                        sched.associated_cpu.cpu_cur_time,
+                    ),
+                    EVENT_TYPE.DEQUEUE,
+                    sched,
+                )
+            )
+
+        # check if user is completed, then add next arrival event
+        if completed_user != None:
+            events.add_event(
+                event(
+                    completed_user.associated_task.arrival_time,
+                    EVENT_TYPE.ARRIVAL,
+                    completed_user,
+                )
+            )
+
     @staticmethod
-    def dequeEventHandler(eventTime: int, sched: Scheduler, taskQueue: TaskQueue, eventsList: EventList ) -> None:
-        # if schduler is still not free, then don't deque
-        if sched.isThreadQueueFull() or taskQueue.length() == 0:
+    def deque_event_handler(
+        event_time: int, sched: scheduler, queue_of_task: task_queue, events: event_list
+    ) -> None:
+        # if scheduler is still not free, then don't deque
+        if sched.is_thread_queue_full() or queue_of_task.length() == 0:
             return
         # deque from the task queue and create a thread in scheduler
-        print(f"|{'DEQUEUE':15s}|{eventTime:<10d}|{f'CPUID {sched.cpu.cpuId}':10s}|{f'TASKID {taskQueue.peek().taskId}':10s}|{f'QLEN {taskQueue.length()-1}':10s}")
-        ts = taskQueue.dequeue()
-        cpuIdle = sched.addTaskAndCreateThread(ts)
-        if cpuIdle:
-            eventsList.addEvent(Event(sched.cpu.currentCpuTime, EventType.EXECUTION, sched))
+        if __debug__:
+            print(
+                f"|{'DEQUEUE':15s}|{event_time:<10d}|{f'CPUID {sched.associated_cpu.cpu_id}':10s}|{f'TASKID {queue_of_task.peek().task_id}':10s}|{f'QLEN {queue_of_task.length()-1}':10s}"
+            )
+        ts = queue_of_task.dequeue()
 
-    
+        cpu_idle = sched.add_task_and_create_thread(ts)
+        if cpu_idle:
+            events.add_event(
+                event(sched.associated_cpu.cpu_cur_time, EVENT_TYPE.EXECUTION, sched)
+            )
